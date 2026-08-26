@@ -1,5 +1,12 @@
 import type { PropsWithChildren, ReactNode } from "react";
-import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Component,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { AuthTokenFetcher } from "convex/browser";
 import {
   Authenticated,
@@ -105,33 +112,56 @@ function useUseAuthFromBetterAuth(
   authClient: AuthClient,
   initialToken?: string | null
 ) {
-  const [cachedToken, setCachedToken] = useState<string | null>(
-    initialTokenUsed ? null : (initialToken ?? null)
-  );
-  const pendingTokenRef = useRef<Promise<string | null> | null>(null);
-  useEffect(() => {
-    if (!initialTokenUsed) {
-      initialTokenUsed = true;
-    }
-  }, []);
-
   return useMemo(
     () =>
       function useAuthFromBetterAuth() {
         const { data: session, isPending: isSessionPending } =
           authClient.useSession();
         const sessionId = session?.session?.id;
+        const [cachedToken, setCachedToken] = useState<string | null>(
+          initialTokenUsed ? null : (initialToken ?? null)
+        );
+        const cachedTokenRef = useRef(cachedToken);
+        const pendingTokenRef = useRef<Promise<string | null> | null>(null);
+        const previousSessionIdRef = useRef(sessionId);
+        const [sessionVersion, setSessionVersion] = useState(0);
+
+        const cacheToken = useCallback((token: string | null) => {
+          cachedTokenRef.current = token;
+          setCachedToken(token);
+        }, []);
+
         useEffect(() => {
-          if (!session && !isSessionPending && cachedToken) {
-            setCachedToken(null);
+          if (!initialTokenUsed) {
+            initialTokenUsed = true;
           }
-        }, [session, isSessionPending]);
+        }, []);
+
+        useEffect(() => {
+          const previousSessionId = previousSessionIdRef.current;
+          if (
+            previousSessionId &&
+            sessionId &&
+            previousSessionId !== sessionId
+          ) {
+            cacheToken(null);
+            setSessionVersion((version) => version + 1);
+          }
+          previousSessionIdRef.current = sessionId;
+        }, [cacheToken, sessionId]);
+
+        useEffect(() => {
+          if (!session && !isSessionPending && cachedTokenRef.current) {
+            cacheToken(null);
+          }
+        }, [cacheToken, session, isSessionPending]);
+
         const fetchAccessToken = useCallback(
           async ({
             forceRefreshToken = false,
           }: { forceRefreshToken?: boolean } = {}) => {
-            if (cachedToken && !forceRefreshToken) {
-              return cachedToken;
+            if (cachedTokenRef.current && !forceRefreshToken) {
+              return cachedTokenRef.current;
             }
             if (!forceRefreshToken && pendingTokenRef.current) {
               return pendingTokenRef.current;
@@ -140,11 +170,11 @@ function useUseAuthFromBetterAuth(
               .token({ fetchOptions: { throw: false } })
               .then(({ data }) => {
                 const token = data?.token || null;
-                setCachedToken(token);
+                cacheToken(token);
                 return token;
               })
               .catch(() => {
-                setCachedToken(null);
+                cacheToken(null);
                 return null;
               })
               .finally(() => {
@@ -152,10 +182,10 @@ function useUseAuthFromBetterAuth(
               });
             return pendingTokenRef.current;
           },
-          // Build a new fetchAccessToken to trigger setAuth() whenever the
-          // session changes.
+          // authClient changes replace this hook factory, and sessionVersion intentionally
+          // rebuilds the callback so Convex reauthenticates for a different session.
           // eslint-disable-next-line react-hooks/exhaustive-deps
-          [sessionId]
+          [authClient, cacheToken, sessionVersion]
         );
         return useMemo(
           () => ({
@@ -163,11 +193,10 @@ function useUseAuthFromBetterAuth(
             isAuthenticated: Boolean(session?.session) || cachedToken !== null,
             fetchAccessToken,
           }),
-          // eslint-disable-next-line react-hooks/exhaustive-deps
-          [isSessionPending, sessionId, fetchAccessToken, cachedToken]
+          [isSessionPending, session, fetchAccessToken, cachedToken]
         );
       },
-    [authClient]
+    [authClient, initialToken]
   );
 }
 
