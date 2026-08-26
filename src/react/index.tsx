@@ -122,13 +122,23 @@ function useUseAuthFromBetterAuth(
           initialTokenUsed ? null : (initialToken ?? null)
         );
         const cachedTokenRef = useRef(cachedToken);
-        const pendingTokenRef = useRef<Promise<string | null> | null>(null);
+        const tokenGenerationRef = useRef(0);
+        const pendingTokenRef = useRef<{
+          generation: number;
+          requestId: symbol;
+          promise: Promise<string | null>;
+        } | null>(null);
         const previousSessionIdRef = useRef(sessionId);
         const [sessionVersion, setSessionVersion] = useState(0);
 
         const cacheToken = useCallback((token: string | null) => {
           cachedTokenRef.current = token;
           setCachedToken(token);
+        }, []);
+
+        const invalidatePendingToken = useCallback(() => {
+          tokenGenerationRef.current += 1;
+          pendingTokenRef.current = null;
         }, []);
 
         useEffect(() => {
@@ -139,22 +149,26 @@ function useUseAuthFromBetterAuth(
 
         useEffect(() => {
           const previousSessionId = previousSessionIdRef.current;
-          if (
-            previousSessionId &&
-            sessionId &&
-            previousSessionId !== sessionId
-          ) {
+          if (previousSessionId && previousSessionId !== sessionId) {
+            invalidatePendingToken();
             cacheToken(null);
-            setSessionVersion((version) => version + 1);
+            if (sessionId) {
+              setSessionVersion((version) => version + 1);
+            }
           }
           previousSessionIdRef.current = sessionId;
-        }, [cacheToken, sessionId]);
+        }, [cacheToken, invalidatePendingToken, sessionId]);
 
         useEffect(() => {
-          if (!session && !isSessionPending && cachedTokenRef.current) {
+          if (
+            !session &&
+            !isSessionPending &&
+            (cachedTokenRef.current || pendingTokenRef.current)
+          ) {
+            invalidatePendingToken();
             cacheToken(null);
           }
-        }, [cacheToken, session, isSessionPending]);
+        }, [cacheToken, invalidatePendingToken, session, isSessionPending]);
 
         const fetchAccessToken = useCallback(
           async ({
@@ -163,24 +177,48 @@ function useUseAuthFromBetterAuth(
             if (cachedTokenRef.current && !forceRefreshToken) {
               return cachedTokenRef.current;
             }
-            if (!forceRefreshToken && pendingTokenRef.current) {
-              return pendingTokenRef.current;
+            const pendingToken = pendingTokenRef.current;
+            if (
+              !forceRefreshToken &&
+              pendingToken?.generation === tokenGenerationRef.current
+            ) {
+              return pendingToken.promise;
             }
-            pendingTokenRef.current = authClient.convex
+            const requestGeneration = tokenGenerationRef.current;
+            const requestId = Symbol();
+            const tokenRequest = authClient.convex
               .token({ fetchOptions: { throw: false } })
               .then(({ data }) => {
+                if (
+                  tokenGenerationRef.current !== requestGeneration ||
+                  pendingTokenRef.current?.requestId !== requestId
+                ) {
+                  return null;
+                }
                 const token = data?.token || null;
                 cacheToken(token);
                 return token;
               })
               .catch(() => {
-                cacheToken(null);
+                if (
+                  tokenGenerationRef.current === requestGeneration &&
+                  pendingTokenRef.current?.requestId === requestId
+                ) {
+                  cacheToken(null);
+                }
                 return null;
               })
               .finally(() => {
-                pendingTokenRef.current = null;
+                if (pendingTokenRef.current?.requestId === requestId) {
+                  pendingTokenRef.current = null;
+                }
               });
-            return pendingTokenRef.current;
+            pendingTokenRef.current = {
+              generation: requestGeneration,
+              requestId,
+              promise: tokenRequest,
+            };
+            return tokenRequest;
           },
           // authClient changes replace this hook factory, and sessionVersion intentionally
           // rebuilds the callback so Convex reauthenticates for a different session.
