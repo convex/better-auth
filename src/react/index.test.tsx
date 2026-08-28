@@ -9,32 +9,68 @@ import type { AuthClient } from "./index.js";
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+function createSessionToken(sessionId: string) {
+  const header = Buffer.from(JSON.stringify({ alg: "none" })).toString(
+    "base64url"
+  );
+  const payload = Buffer.from(JSON.stringify({ sessionId })).toString(
+    "base64url"
+  );
+  return `${header}.${payload}.signature`;
+}
+
 describe("ConvexBetterAuthProvider", () => {
-  test("keeps auth set during SSR hydration and rotates it for a new session", async () => {
+  test("preserves matching SSR auth and rejects a different hydrated session", async () => {
     let sessionState: {
       data: { session: { id: string } } | null;
       isPending: boolean;
     } = { data: null, isPending: true };
+    let mismatchedSessionState: {
+      data: { session: { id: string } } | null;
+      isPending: boolean;
+    } = { data: null, isPending: true };
+    const serverToken = createSessionToken("session-a");
+    const mismatchedServerToken = createSessionToken("session-a");
     const token = vi
       .fn()
       .mockResolvedValueOnce({ data: { token: "fresh-token" } })
       .mockResolvedValueOnce({ data: { token: "replacement-token" } });
+    const mismatchedToken = vi
+      .fn()
+      .mockResolvedValue({ data: { token: "session-b-token" } });
     const authClient = {
       convex: { token },
       useSession: () => sessionState,
+    } as unknown as AuthClient;
+    const mismatchedAuthClient = {
+      convex: { token: mismatchedToken },
+      useSession: () => mismatchedSessionState,
     } as unknown as AuthClient;
     const client = {
       clearAuth: vi.fn(),
       setAuth: vi.fn(),
     };
+    const mismatchedClient = {
+      clearAuth: vi.fn(),
+      setAuth: vi.fn(),
+    };
     const renderProvider = () => (
-      <ConvexBetterAuthProvider
-        authClient={authClient}
-        client={client}
-        initialToken="server-token"
-      >
-        <div />
-      </ConvexBetterAuthProvider>
+      <>
+        <ConvexBetterAuthProvider
+          authClient={authClient}
+          client={client}
+          initialToken={serverToken}
+        >
+          <div />
+        </ConvexBetterAuthProvider>
+        <ConvexBetterAuthProvider
+          authClient={mismatchedAuthClient}
+          client={mismatchedClient}
+          initialToken={mismatchedServerToken}
+        >
+          <div />
+        </ConvexBetterAuthProvider>
+      </>
     );
 
     let renderer: ReactTestRenderer;
@@ -46,16 +82,13 @@ describe("ConvexBetterAuthProvider", () => {
     const initialFetchToken = client.setAuth.mock.calls[0]?.[0];
     await expect(
       initialFetchToken?.({ forceRefreshToken: false })
-    ).resolves.toBe("server-token");
-    await act(async () => {
-      await expect(
-        initialFetchToken?.({ forceRefreshToken: true })
-      ).resolves.toBe("fresh-token");
-    });
+    ).resolves.toBe(serverToken);
+    expect(mismatchedClient.setAuth).toHaveBeenCalledTimes(1);
+    const mismatchedInitialFetchToken =
+      mismatchedClient.setAuth.mock.calls[0]?.[0];
     await expect(
-      initialFetchToken?.({ forceRefreshToken: false })
-    ).resolves.toBe("fresh-token");
-    expect(token).toHaveBeenCalledTimes(1);
+      mismatchedInitialFetchToken?.({ forceRefreshToken: false })
+    ).resolves.toBe(mismatchedServerToken);
 
     sessionState = {
       data: { session: { id: "session-a" } },
@@ -67,6 +100,39 @@ describe("ConvexBetterAuthProvider", () => {
 
     expect(client.clearAuth).not.toHaveBeenCalled();
     expect(client.setAuth).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await expect(
+        initialFetchToken?.({ forceRefreshToken: true })
+      ).resolves.toBe("fresh-token");
+    });
+    await expect(
+      initialFetchToken?.({ forceRefreshToken: false })
+    ).resolves.toBe("fresh-token");
+    expect(token).toHaveBeenCalledTimes(1);
+
+    mismatchedSessionState = {
+      data: { session: { id: "session-b" } },
+      isPending: false,
+    };
+    await act(async () => {
+      renderer.update(renderProvider());
+    });
+
+    expect(mismatchedClient.clearAuth).toHaveBeenCalledTimes(1);
+    expect(mismatchedClient.setAuth).toHaveBeenCalledTimes(2);
+    const mismatchedReplacementFetchToken =
+      mismatchedClient.setAuth.mock.calls[1]?.[0];
+    expect(mismatchedReplacementFetchToken).not.toBe(
+      mismatchedInitialFetchToken
+    );
+    await expect(
+      mismatchedInitialFetchToken?.({ forceRefreshToken: false })
+    ).resolves.toBe("session-b-token");
+    await expect(
+      mismatchedReplacementFetchToken?.({ forceRefreshToken: false })
+    ).resolves.toBe("session-b-token");
+    expect(mismatchedToken).toHaveBeenCalledTimes(1);
 
     sessionState = {
       data: { session: { id: "session-b" } },

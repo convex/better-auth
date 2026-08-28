@@ -17,6 +17,7 @@ import {
 import type { FunctionReference } from "convex/server";
 import type { BetterAuthClientPlugin } from "better-auth";
 import type { createAuthClient } from "better-auth/react";
+import { decodeJwt } from "jose";
 import type {
   convexClient,
   crossDomainClient,
@@ -108,6 +109,17 @@ export function ConvexBetterAuthProvider({
 
 let initialTokenUsed = false;
 
+function getTokenSessionId(token: string): string | null {
+  try {
+    // Convex still verifies the token. Decoding here only determines whether
+    // the cached SSR token belongs to the session that hydrated in the browser.
+    const sessionId = decodeJwt(token).sessionId;
+    return typeof sessionId === "string" && sessionId ? sessionId : null;
+  } catch {
+    return null;
+  }
+}
+
 function useUseAuthFromBetterAuth(
   authClient: AuthClient,
   initialToken?: string | null
@@ -122,6 +134,11 @@ function useUseAuthFromBetterAuth(
           initialTokenUsed ? null : (initialToken ?? null)
         );
         const cachedTokenRef = useRef(cachedToken);
+        // undefined means there is no SSR token awaiting hydration. null means
+        // the token could not be decoded and must not be preserved.
+        const initialTokenSessionIdRef = useRef<string | null | undefined>(
+          cachedToken ? getTokenSessionId(cachedToken) : undefined
+        );
         const tokenGenerationRef = useRef(0);
         const pendingTokenRef = useRef<{
           generation: number;
@@ -130,8 +147,17 @@ function useUseAuthFromBetterAuth(
         } | null>(null);
         const previousSessionIdRef = useRef(sessionId);
         const [sessionVersion, setSessionVersion] = useState(0);
+        const isInitialTokenSessionMismatch =
+          initialTokenSessionIdRef.current !== undefined &&
+          sessionId !== undefined &&
+          initialTokenSessionIdRef.current !== sessionId;
+        const isSessionReplacement =
+          isInitialTokenSessionMismatch ||
+          (previousSessionIdRef.current !== undefined &&
+            previousSessionIdRef.current !== sessionId);
 
         const cacheToken = useCallback((token: string | null) => {
+          initialTokenSessionIdRef.current = undefined;
           cachedTokenRef.current = token;
           setCachedToken(token);
         }, []);
@@ -149,7 +175,10 @@ function useUseAuthFromBetterAuth(
 
         useEffect(() => {
           const previousSessionId = previousSessionIdRef.current;
-          if (previousSessionId && previousSessionId !== sessionId) {
+          if (
+            isInitialTokenSessionMismatch ||
+            (previousSessionId && previousSessionId !== sessionId)
+          ) {
             invalidatePendingToken();
             cacheToken(null);
             if (sessionId) {
@@ -157,7 +186,12 @@ function useUseAuthFromBetterAuth(
             }
           }
           previousSessionIdRef.current = sessionId;
-        }, [cacheToken, invalidatePendingToken, sessionId]);
+        }, [
+          cacheToken,
+          invalidatePendingToken,
+          isInitialTokenSessionMismatch,
+          sessionId,
+        ]);
 
         useEffect(() => {
           if (
@@ -174,6 +208,9 @@ function useUseAuthFromBetterAuth(
           async ({
             forceRefreshToken = false,
           }: { forceRefreshToken?: boolean } = {}) => {
+            if (isSessionReplacement) {
+              return null;
+            }
             if (cachedTokenRef.current && !forceRefreshToken) {
               return cachedTokenRef.current;
             }
@@ -223,15 +260,24 @@ function useUseAuthFromBetterAuth(
           // authClient changes replace this hook factory, and sessionVersion intentionally
           // rebuilds the callback so Convex reauthenticates for a different session.
           // eslint-disable-next-line react-hooks/exhaustive-deps
-          [authClient, cacheToken, sessionVersion]
+          [authClient, cacheToken, isSessionReplacement, sessionVersion]
         );
         return useMemo(
           () => ({
-            isLoading: isSessionPending && !cachedToken,
-            isAuthenticated: Boolean(session?.session) || cachedToken !== null,
+            isLoading:
+              isSessionReplacement || (isSessionPending && !cachedToken),
+            isAuthenticated:
+              !isSessionReplacement &&
+              (Boolean(session?.session) || cachedToken !== null),
             fetchAccessToken,
           }),
-          [isSessionPending, session, fetchAccessToken, cachedToken]
+          [
+            isSessionPending,
+            isSessionReplacement,
+            session,
+            fetchAccessToken,
+            cachedToken,
+          ]
         );
       },
     [authClient, initialToken]
