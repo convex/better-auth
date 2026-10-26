@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.6
+
+- fix: cross-domain one-time tokens are only issued to exact trusted origins
+  (GHSA-j8qq-g9pm-v3c2)
+- fix: forwarded host is only restored for exact trusted hosts
+  (GHSA-pgx2-m66h-x29f)
+
 ## 0.12.5
 
 - fix unbounded count/findMany pagination looping forever past 200 rows (#394)
