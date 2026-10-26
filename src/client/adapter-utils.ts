@@ -339,11 +339,12 @@ const filterByWhere = <
       }
       return val > wVal;
     };
+    const isNullish = (val: typeof value) => val === undefined || val === null;
     const filter = (w: Infer<typeof adapterWhereValidator>) => {
       switch (w.operator) {
         case undefined:
         case "eq": {
-          return value === w.value;
+          return w.value === null ? isNullish(value) : value === w.value;
         }
         case "in": {
           return Array.isArray(w.value) && (w.value as any[]).includes(value);
@@ -366,7 +367,7 @@ const filterByWhere = <
           return value === w.value || isGreaterThan(value, w.value);
         }
         case "ne": {
-          return value !== w.value;
+          return w.value === null ? !isNullish(value) : value !== w.value;
         }
         case "contains": {
           return typeof value === "string" && value.includes(w.value as string);
