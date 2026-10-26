@@ -125,6 +125,25 @@ const parseWhere = (
   }) as ConvexCleanedWhere[];
 };
 
+// Better Auth where semantics: clauses with connector "OR" form a single
+// OR-group that is AND'd with all remaining (implicitly AND) clauses. The
+// component only evaluates AND-only where lists, so OR queries run as one
+// query per OR branch — each branch combined with the AND clauses — and the
+// results are unioned.
+const splitWhereByConnector = (where?: (Where & { join?: undefined })[]) => {
+  const orClauses = where?.filter((w) => w.connector === "OR") ?? [];
+  const andClauses = where?.filter((w) => w.connector !== "OR") ?? [];
+  return { orClauses, andClauses };
+};
+
+const orBranchWhere = (
+  orClause: Where & { join?: undefined },
+  andClauses: (Where & { join?: undefined })[]
+): (Where & { join?: undefined })[] => [
+  { ...orClause, connector: undefined },
+  ...andClauses,
+];
+
 type DocWithFlexibleId = {
   _id?: string | null;
   id?: string | null;
@@ -246,12 +265,13 @@ export const convexAdapter = <
         model: string;
         where: (Where & { join?: undefined })[];
       }) => {
-        const results = await asyncMap(data.where, async (w) =>
+        const { orClauses, andClauses } = splitWhereByConnector(data.where);
+        const results = await asyncMap(orClauses, async (w) =>
           handlePagination(
             async ({ paginationOpts }) => {
               return await ctx.runQuery(api.adapter.findMany, {
                 model: data.model as TableNames,
-                where: parseWhere(w),
+                where: parseWhere(orBranchWhere(w, andClauses)),
                 paginationOpts,
               });
             }
@@ -289,17 +309,19 @@ export const convexAdapter = <
           });
         },
         findOne: async (data): Promise<any> => {
-          if (data.where?.every((w) => w.connector === "OR")) {
-            for (const w of data.where) {
+          const { orClauses, andClauses } = splitWhereByConnector(data.where);
+          if (orClauses.length) {
+            for (const w of orClauses) {
               const result = await ctx.runQuery(api.adapter.findOne, {
                 ...data,
                 model: data.model as TableNames,
-                where: parseWhere(w),
+                where: parseWhere(orBranchWhere(w, andClauses)),
               });
               if (result) {
                 return result;
               }
             }
+            return null;
           }
           return await ctx.runQuery(api.adapter.findOne, {
             ...data,
@@ -312,17 +334,18 @@ export const convexAdapter = <
             throw new Error("offset not supported");
           }
 
-          if (data.where?.some((w) => w.connector === "OR")) {
+          const { orClauses, andClauses } = splitWhereByConnector(data.where);
+          if (orClauses.length) {
             // Always fetch full docs for OR unions so we can dedupe
             // by id and sort/limit before trimming selected fields.
             const { select: _ignoredSelect, ...queryData } = data;
-            const results = await asyncMap(data.where, async (w) =>
+            const results = await asyncMap(orClauses, async (w) =>
               handlePagination(
                 async ({ paginationOpts }) => {
                   return await ctx.runQuery(api.adapter.findMany, {
                     ...queryData,
                     model: data.model as TableNames,
-                    where: parseWhere(w),
+                    where: parseWhere(orBranchWhere(w, andClauses)),
                     paginationOpts,
                   });
                 },
@@ -357,13 +380,14 @@ export const convexAdapter = <
         },
         count: async (data) => {
           // Yes, count is just findMany returning a number.
-          if (data.where?.some((w) => w.connector === "OR")) {
-            const results = await asyncMap(data.where, async (w) =>
+          const { orClauses, andClauses } = splitWhereByConnector(data.where);
+          if (orClauses.length) {
+            const results = await asyncMap(orClauses, async (w) =>
               handlePagination(async ({ paginationOpts }) => {
                 return await ctx.runQuery(api.adapter.findMany, {
                   ...data,
                   model: data.model as TableNames,
-                  where: parseWhere(w),
+                  where: parseWhere(orBranchWhere(w, andClauses)),
                   paginationOpts,
                 });
               })
