@@ -9,6 +9,26 @@ import { VERSION } from "../../version.js";
 export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
   const oneTimeToken = oneTimeTokenPlugin();
 
+  // Origins from trustedOrigins that name a single http(s) origin. Wildcard
+  // patterns and custom schemes are excluded.
+  const exactTrustedOrigins = (trustedOrigins: string[]) => {
+    const origins = new Set<string>();
+    for (const entry of trustedOrigins) {
+      if (entry.includes("*")) {
+        continue;
+      }
+      try {
+        const url = new URL(entry);
+        if (url.protocol === "http:" || url.protocol === "https:") {
+          origins.add(url.origin);
+        }
+      } catch {
+        // not a URL
+      }
+    }
+    return origins;
+  };
+
   const rewriteCallbackURL = (callbackURL?: string) => {
     if (!callbackURL) {
       return callbackURL;
@@ -26,10 +46,8 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
   return {
     id: "cross-domain",
     version: VERSION,
-    // TODO: remove this in the next minor release, it doesn't
-    // actually affect ctx.trustedOrigins. cors allowedOrigins
-    // is using it, via options.trustedOrigins, though, so it's
-    // a breaking change.
+    // Adds siteUrl to trustedOrigins so the one-time token is issued
+    // for redirects to it even when the app's own list omits it.
     init() {
       return {
         options: {
@@ -43,7 +61,9 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
             // don't have a way to do that. This only means we can't stop an
             // oauth flow that started in one browser from continuing in
             // another. We still verify the state token from the query string
-            // against the database.
+            // against the database. The one-time token appended after the
+            // callback is only issued for redirects to an exact trusted
+            // origin (see the after hook below).
             skipStateCookieCheck: true,
           },
         },
@@ -56,7 +76,7 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
             return (
               Boolean(
                 ctx.request?.headers.has("better-auth-cookie") ||
-                  ctx.headers?.has("better-auth-cookie")
+                ctx.headers?.has("better-auth-cookie")
               ) && !isExpoNative(ctx)
             );
           },
@@ -86,8 +106,8 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
           matcher: (ctx) => {
             return Boolean(
               ctx.method === "GET" &&
-                ctx.path?.startsWith("/verify-email") &&
-                !isExpoNative(ctx)
+              ctx.path?.startsWith("/verify-email") &&
+              !isExpoNative(ctx)
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
@@ -136,7 +156,7 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
             return (
               Boolean(
                 ctx.request?.headers.has("better-auth-cookie") ||
-                  ctx.headers?.has("better-auth-cookie")
+                ctx.headers?.has("better-auth-cookie")
               ) && !isExpoNative(ctx)
             );
           },
@@ -154,7 +174,7 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
             return Boolean(
               (ctx.path?.startsWith("/callback") ||
                 ctx.path?.startsWith("/magic-link/verify")) &&
-                !isExpoNative(ctx)
+              !isExpoNative(ctx)
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
@@ -164,6 +184,20 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
               ctx.context.logger.error("No session found");
               return;
             }
+            const redirectTo = ctx.context.responseHeaders?.get("location");
+            if (!redirectTo) {
+              ctx.context.logger.error("No redirect to found");
+              return;
+            }
+            const url = new URL(redirectTo);
+            if (
+              !exactTrustedOrigins(ctx.context.trustedOrigins).has(url.origin)
+            ) {
+              ctx.context.logger.warn(
+                `Not appending one-time token: redirect origin ${url.origin} is not an exact entry in trustedOrigins`
+              );
+              return;
+            }
             const token = generateRandomString(32);
             const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
             await ctx.context.internalAdapter.createVerificationValue({
@@ -171,12 +205,6 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
               identifier: `one-time-token:${token}`,
               expiresAt,
             });
-            const redirectTo = ctx.context.responseHeaders?.get("location");
-            if (!redirectTo) {
-              ctx.context.logger.error("No redirect to found");
-              return;
-            }
-            const url = new URL(redirectTo);
             url.searchParams.set("ott", token);
             throw ctx.redirect(url.toString());
           }),

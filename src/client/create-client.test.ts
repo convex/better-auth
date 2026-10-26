@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { httpActionGeneric, httpRouter } from "convex/server";
 import { createClient } from "./create-client.js";
+import type { TrustedOriginsOption } from "../utils/index.js";
 
 const component = {
   adapter: {
@@ -195,46 +196,92 @@ describe("createClient route registration", () => {
     expect(createAuth).toHaveBeenCalledTimes(2);
   });
 
-  it("restores preserved forwarded host headers before calling auth.handler", async () => {
-    const client = createClient(component);
-    const http = httpRouter();
-    const handler = vi.fn(async (_request: Request) => new Response("ok"));
-    const createAuth = vi.fn(() => ({
-      handler,
-      options: {
-        trustedOrigins: ["https://app.example.com"],
-      },
-      $context: Promise.resolve({
-        options: {
-          trustedOrigins: ["https://app.example.com"],
-        },
-      }),
-    }));
+  describe("forwarded host restore", () => {
+    const callHandler = async (
+      trustedOrigins: TrustedOriginsOption,
+      headers: Record<string, string>
+    ) => {
+      const client = createClient(component);
+      const http = httpRouter();
+      const handler = vi.fn(async (_request: Request) => new Response("ok"));
+      const createAuth = vi.fn(() => ({
+        handler,
+        options: { trustedOrigins },
+        $context: Promise.resolve({ options: { trustedOrigins } }),
+      }));
+      client.registerRoutes(http, createAuth);
+      const getHandler = getRouteHandler(http, "/api/auth/test", "GET");
+      expect(getHandler).toBeTruthy();
+      await getHandler!._handler(
+        {},
+        new Request("https://deployment.convex.site/api/auth/test", {
+          method: "GET",
+          headers: { host: "deployment.convex.site", ...headers },
+        })
+      );
+      const forwarded = handler.mock.calls[0]?.[0] as Request;
+      expect(forwarded).toBeInstanceOf(Request);
+      return forwarded.headers;
+    };
 
-    client.registerRoutes(http, createAuth);
+    it("restores the original host when it is an exact trusted origin", async () => {
+      const headers = await callHandler(["https://app.example.com"], {
+        "x-forwarded-host": "deployment.convex.site",
+        "x-forwarded-proto": "https",
+        "x-better-auth-forwarded-host": "app.example.com",
+        "x-better-auth-forwarded-proto": "https",
+      });
+      expect(headers.get("x-forwarded-host")).toBe("app.example.com");
+      expect(headers.get("x-forwarded-proto")).toBe("https");
+    });
 
-    const getHandler = getRouteHandler(http, "/api/auth/test", "GET");
-    expect(getHandler).toBeTruthy();
-    await getHandler!._handler(
-      {},
-      new Request("https://adjective-animal-123.convex.site/api/auth/test", {
-        method: "GET",
-        headers: {
-          host: "deployment.convex.site",
+    it("ignores the original host when it only matches a wildcard", async () => {
+      const headers = await callHandler(
+        ["https://app.example.com", "https://*.previews.example.app"],
+        {
           "x-forwarded-host": "deployment.convex.site",
           "x-forwarded-proto": "https",
-          "x-better-auth-forwarded-host": "app.example.com",
+          "x-better-auth-forwarded-host": "branch.previews.example.app",
           "x-better-auth-forwarded-proto": "https",
-        },
-      })
-    );
+        }
+      );
+      expect(headers.get("x-forwarded-host")).toBe("deployment.convex.site");
+      expect(headers.get("x-forwarded-proto")).toBe("https");
+    });
 
-    const forwardedRequest = handler.mock.calls[0]?.[0];
-    expect(forwardedRequest).toBeInstanceOf(Request);
-    expect(forwardedRequest.headers.get("x-forwarded-host")).toBe(
-      "app.example.com"
-    );
-    expect(forwardedRequest.headers.get("x-forwarded-proto")).toBe("https");
+    it("ignores a trusted original host without a valid protocol", async () => {
+      const headers = await callHandler(["https://app.example.com"], {
+        "x-forwarded-host": "deployment.convex.site",
+        "x-forwarded-proto": "https",
+        "x-better-auth-forwarded-host": "app.example.com",
+      });
+      expect(headers.get("x-forwarded-host")).toBe("deployment.convex.site");
+      expect(headers.get("x-forwarded-proto")).toBe("https");
+    });
+
+    it("leaves incoming x-forwarded-* headers as they arrived", async () => {
+      const headers = await callHandler(["https://app.example.com"], {
+        "x-forwarded-host": "deployment.convex.site",
+        "x-forwarded-proto": "https",
+      });
+      expect(headers.get("x-forwarded-host")).toBe("deployment.convex.site");
+      expect(headers.get("x-forwarded-proto")).toBe("https");
+    });
+
+    it("honors exact origins returned by a trustedOrigins function", async () => {
+      const headers = await callHandler(
+        (request?: Request) =>
+          request?.headers.get("x-test-tenant") === "acme"
+            ? ["https://acme.example.com"]
+            : [],
+        {
+          "x-test-tenant": "acme",
+          "x-better-auth-forwarded-host": "acme.example.com",
+          "x-better-auth-forwarded-proto": "https",
+        }
+      );
+      expect(headers.get("x-forwarded-host")).toBe("acme.example.com");
+    });
   });
 
   it("registerRoutesLazy resolves trustedOrigins lazily when needed", async () => {

@@ -326,6 +326,17 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
   }) satisfies BetterAuthOptions;
 ```
 
+<Callout type="warn">
+  Web sign-in redirects only complete for origins you control, listed exactly
+  in `trustedOrigins`, not wildcards. Native sign-in via `your-scheme://` is
+  unaffected. For web previews, set `SITE_URL` per preview:
+
+```sh
+npx convex deploy --cmd 'npx convex env set --preview-name "$VERCEL_GIT_COMMIT_REF" SITE_URL "https://$VERCEL_URL" && npm run build'
+```
+
+</Callout>
+
 </div>
 
 <div className="fd-step">

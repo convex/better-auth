@@ -92,24 +92,64 @@ type RegisterRoutesLazyOptions = {
   cors?: RouteCorsOptions;
 };
 
-const restoreOriginalForwardedHeaders = (request: Request) => {
+// Hosts named exactly in trustedOrigins (and, with a dynamic baseURL, in
+// allowedHosts). Wildcard patterns and non-http(s) entries are excluded.
+const exactTrustedHosts = async (
+  auth: {
+    $context: Promise<{
+      trustedOrigins?: string[];
+      options: { trustedOrigins?: unknown };
+    }>;
+  },
+  request: Request
+) => {
+  const ctx = await auth.$context;
+  const origins: unknown[] = [...(ctx.trustedOrigins ?? [])];
+  if (Array.isArray(ctx.options.trustedOrigins)) {
+    origins.push(...ctx.options.trustedOrigins);
+  } else if (typeof ctx.options.trustedOrigins === "function") {
+    const resolved = await ctx.options.trustedOrigins(request);
+    if (Array.isArray(resolved)) {
+      origins.push(...resolved);
+    }
+  }
+  const hosts = new Set<string>();
+  for (const origin of origins) {
+    if (typeof origin !== "string" || origin.includes("*")) {
+      continue;
+    }
+    try {
+      const url = new URL(origin);
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        hosts.add(url.host.toLowerCase());
+      }
+    } catch {
+      // not a URL
+    }
+  }
+  return hosts;
+};
+
+// The framework proxy handlers send the original host and protocol in
+// x-better-auth-forwarded-* headers. Restore them into x-forwarded-* only
+// when the host is one the app lists exactly in trustedOrigins and the
+// protocol is http or https. Both are restored or neither is.
+const restoreOriginalForwardedHeaders = (
+  request: Request,
+  trustedHosts: Set<string>
+) => {
   const originalHost = request.headers.get("x-better-auth-forwarded-host");
   const originalProto = request.headers.get("x-better-auth-forwarded-proto");
-
-  if (!originalHost && !originalProto) {
+  if (
+    !originalHost ||
+    !trustedHosts.has(originalHost.toLowerCase()) ||
+    (originalProto !== "http" && originalProto !== "https")
+  ) {
     return request;
   }
-
   const headers = new Headers(request.headers);
-
-  if (originalHost) {
-    headers.set("x-forwarded-host", originalHost);
-  }
-
-  if (originalProto) {
-    headers.set("x-forwarded-proto", originalProto);
-  }
-
+  headers.set("x-forwarded-host", originalHost);
+  headers.set("x-forwarded-proto", originalProto);
   return new Request(request, { headers });
 };
 
@@ -401,7 +441,10 @@ export const createClient = <
           console.log("request headers", request.headers);
         }
         const auth = createAuth(ctx as any);
-        const normalizedRequest = restoreOriginalForwardedHeaders(request);
+        const normalizedRequest = restoreOriginalForwardedHeaders(
+          request,
+          await exactTrustedHosts(auth, request)
+        );
         const response = await auth.handler(normalizedRequest);
         if (config?.verbose) {
           // eslint-disable-next-line no-console
@@ -521,7 +564,10 @@ export const createClient = <
           console.log("request headers", request.headers);
         }
         const auth = createAuth(ctx as any);
-        const normalizedRequest = restoreOriginalForwardedHeaders(request);
+        const normalizedRequest = restoreOriginalForwardedHeaders(
+          request,
+          await exactTrustedHosts(auth, request)
+        );
         const response = await auth.handler(normalizedRequest);
         if (config?.verbose) {
           // eslint-disable-next-line no-console

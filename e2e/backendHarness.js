@@ -99,7 +99,7 @@ function getDownloadPath() {
 
 async function downloadAndStartBackend() {
   const latest = await fetch(
-    "https://github.com/get-convex/convex-backend/releases/latest",
+    "https://github.com/convex/convex-backend/releases/latest",
     { redirect: "manual" },
   );
   if (latest.status !== 302) {
@@ -115,7 +115,7 @@ async function downloadAndStartBackend() {
     );
   }
   const response = await fetch(
-    `https://github.com/get-convex/convex-backend/releases/download/${version}/${downloadPath}`,
+    `https://github.com/convex/convex-backend/releases/download/${version}/${downloadPath}`,
   );
 
   const zipLocation = "convex-backend.zip";
