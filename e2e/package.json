@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@playwright/test": "^1.60.0",
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.0",
     "dotenv": "^17.0.0"
   }
 }
