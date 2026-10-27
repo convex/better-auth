@@ -39,6 +39,12 @@ const getJwksAlg = (authProvider: AuthProvider) => {
   return isCustomJwt ? authProvider.algorithm : "EdDSA";
 };
 
+const parseJwkDates = (key: Jwk): Jwk => ({
+  ...key,
+  createdAt: new Date(key.createdAt),
+  ...(key.expiresAt ? { expiresAt: new Date(key.expiresAt) } : {}),
+});
+
 const parseAuthConfig = (authConfig: AuthConfig, opts: { jwks?: string }) => {
   const providerConfigs = authConfig.providers.filter(
     (provider) => provider.applicationID === "convex"
@@ -205,7 +211,9 @@ export const convex = (opts: {
       },
     },
   } satisfies JwtOptions;
-  const jwks = opts.jwks ? JSON.parse(opts.jwks) : undefined;
+  const jwks: Jwk[] | undefined = opts.jwks
+    ? JSON.parse(opts.jwks).map(parseJwkDates)
+    : undefined;
   const jwt = jwtPlugin({
     ...jwtOptions,
     adapter: {
@@ -223,8 +231,8 @@ export const convex = (opts: {
         });
       },
       getJwks: async (ctx) => {
-        if (opts.jwks) {
-          return jwks;
+        if (jwks) {
+          return [...jwks];
         }
         // TODO: remove when date parsing for jwks adapter is fixed upstream
         const keys: Jwk[] = await ctx.context.adapter.findMany<Jwk>({
@@ -234,11 +242,7 @@ export const convex = (opts: {
             direction: "desc",
           },
         });
-        return keys.map((key) => ({
-          ...key,
-          createdAt: new Date(key.createdAt),
-          ...(key.expiresAt ? { expiresAt: new Date(key.expiresAt) } : {}),
-        }));
+        return keys.map(parseJwkDates);
       },
     },
   });
