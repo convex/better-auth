@@ -87,6 +87,10 @@
       "types": "./dist/react-start/index.d.ts",
       "default": "./dist/react-start/index.js"
     },
+    "./session": {
+      "types": "./dist/client/create-session-api.d.ts",
+      "default": "./dist/client/create-session-api.js"
+    },
     "./test": "./src/test.ts",
     "./utils": {
       "types": "./dist/utils/index.d.ts",

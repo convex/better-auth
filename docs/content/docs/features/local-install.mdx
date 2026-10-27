@@ -128,6 +128,26 @@ installed component.
 
   <div className="fd-step">
 
+    ### Export session functions
+
+    `getAuthUser`, `safeGetAuthUser`, `getHeaders`, and `getAnyUserById` read
+    the session and user through these functions. Unlike the adapter, they
+    don't load Better Auth and your plugins on every call. Import
+    `createSessionApi` from `@convex-dev/better-auth/session` so this module
+    stays small.
+
+    ```ts title="convex/betterAuth/session.ts"
+    import { createSessionApi } from "@convex-dev/better-auth/session";
+    import schema from "./schema";
+
+    export const { getSessionUser, getSession, getUser } =
+      createSessionApi(schema);
+    ```
+
+  </div>
+
+  <div className="fd-step">
+
     ### Update component registration
 
     Update component registration to use the locally installed component.
@@ -158,10 +178,11 @@ installed component.
     export const authComponent = createClient<DataModel>(components.betterAuth); // [!code --]
     export const authComponent = createClient<DataModel, typeof authSchema>( // [!code ++]
       components.betterAuth,
-      // [!code ++:5]
+      // [!code ++:6]
       {
         local: {
           schema: authSchema,
+          sessionApi: true,
         },
       }
     );

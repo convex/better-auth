@@ -1893,6 +1893,71 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         Name
       >;
     };
+    session: {
+      getSession: FunctionReference<
+        "query",
+        "internal",
+        { sessionId: string },
+        null | {
+          _creationTime: number;
+          _id: string;
+          createdAt: number;
+          expiresAt: number;
+          ipAddress?: null | string;
+          token: string;
+          updatedAt: number;
+          userAgent?: null | string;
+          userId: string;
+        },
+        Name
+      >;
+      getSessionUser: FunctionReference<
+        "query",
+        "internal",
+        { now: number; sessionId: string; userId: string },
+        null | {
+          _creationTime: number;
+          _id: string;
+          createdAt: number;
+          displayUsername?: null | string;
+          email: string;
+          emailVerified: boolean;
+          image?: null | string;
+          isAnonymous?: null | boolean;
+          name: string;
+          phoneNumber?: null | string;
+          phoneNumberVerified?: null | boolean;
+          twoFactorEnabled?: null | boolean;
+          updatedAt: number;
+          userId?: null | string;
+          username?: null | string;
+        },
+        Name
+      >;
+      getUser: FunctionReference<
+        "query",
+        "internal",
+        { userId: string },
+        null | {
+          _creationTime: number;
+          _id: string;
+          createdAt: number;
+          displayUsername?: null | string;
+          email: string;
+          emailVerified: boolean;
+          image?: null | string;
+          isAnonymous?: null | boolean;
+          name: string;
+          phoneNumber?: null | string;
+          phoneNumberVerified?: null | boolean;
+          twoFactorEnabled?: null | boolean;
+          updatedAt: number;
+          userId?: null | string;
+          username?: null | string;
+        },
+        Name
+      >;
+    };
     testProfiles: {
       adapterAdditionalFields: {
         create: FunctionReference<
