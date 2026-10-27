@@ -116,10 +116,11 @@ export const convexBetterAuthNextJs = (
     try {
       return await fn(token?.token);
     } catch (error) {
+      // Refresh only when a cached JWT was rejected as an auth error.
       if (
         !opts?.jwtCache?.enabled ||
         token.isFresh ||
-        opts.jwtCache.isAuthError(error)
+        !opts.jwtCache.isAuthError(error)
       ) {
         throw error;
       }
