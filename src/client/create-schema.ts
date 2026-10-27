@@ -50,6 +50,58 @@ const specialFields = (tables: BetterAuthDBSchema) =>
       )
   );
 
+const resolveReferencedTableName = (
+  refModel: string,
+  tables: BetterAuthDBSchema
+): string | null => {
+  const byKey = tables[refModel];
+  if (byKey) {
+    return byKey.modelName;
+  }
+  const byModelName = Object.values(tables).find(
+    (table) => table.modelName === refModel
+  );
+  return byModelName?.modelName ?? null;
+};
+
+const getFieldValidator = (
+  field: DBFieldAttribute,
+  tables: BetterAuthDBSchema
+): string => {
+  if (
+    field.type === "string" &&
+    field.references?.field === "id" &&
+    field.references.model
+  ) {
+    const tableName = resolveReferencedTableName(
+      field.references.model,
+      tables
+    );
+    if (tableName) {
+      return `v.id("${tableName}")`;
+    }
+  }
+
+  const type = field.type as
+    | "string"
+    | "number"
+    | "boolean"
+    | "date"
+    | "json"
+    | `${"string" | "number"}[]`;
+
+  const typeMap: Record<typeof type, string> = {
+    string: `v.string()`,
+    boolean: `v.boolean()`,
+    number: `v.number()`,
+    date: `v.number()`,
+    json: `v.string()`,
+    "number[]": `v.array(v.number())`,
+    "string[]": `v.array(v.string())`,
+  } as const;
+  return typeMap[type];
+};
+
 const mergedIndexFields = (tables: BetterAuthDBSchema) =>
   Object.fromEntries(
     Object.entries(tables).map(([key, table]) => {
@@ -142,27 +194,6 @@ export const tables = {
       Object.entries(table.fields).filter(([key]) => key !== "id")
     );
 
-    function getType(name: string, field: DBFieldAttribute) {
-      const type = field.type as
-        | "string"
-        | "number"
-        | "boolean"
-        | "date"
-        | "json"
-        | `${"string" | "number"}[]`;
-
-      const typeMap: Record<typeof type, string> = {
-        string: `v.string()`,
-        boolean: `v.boolean()`,
-        number: `v.number()`,
-        date: `v.number()`,
-        json: `v.string()`,
-        "number[]": `v.array(v.number())`,
-        "string[]": `v.array(v.string())`,
-      } as const;
-      return typeMap[type];
-    }
-
     const indexes =
       mergedIndexFields(tables)[
         tableKey as keyof typeof mergedIndexFields
@@ -176,7 +207,7 @@ export const tables = {
 ${Object.keys(fields)
   .map((field) => {
     const attr = fields[field]!;
-    const type = getType(field, attr as DBFieldAttribute);
+    const type = getFieldValidator(attr as DBFieldAttribute, tables);
     const optional = (fieldSchema: string) =>
       attr.required
         ? fieldSchema
