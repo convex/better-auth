@@ -3,6 +3,7 @@
 import { describe, it } from "vitest";
 import { convexTest } from "convex-test";
 import {
+  caseInsensitiveTestSuite,
   testAdapter,
   transactionsTestSuite,
 } from "@better-auth/test-utils/adapter";
@@ -169,6 +170,7 @@ if (currentNodeMajor < MIN_NODE_MAJOR) {
         }),
         transactionsTestSuite({ disableTests: { ALL: true } }),
         coreAuthFlowTestSuite(),
+        caseInsensitiveTestSuite(),
         convexCustomTestSuite(),
       ],
     });

@@ -107,13 +107,6 @@ const parseWhere = (
     return [];
   }
   const whereArray = Array.isArray(where) ? where : [where];
-  for (const w of whereArray) {
-    if (w.mode === "insensitive") {
-      throw new Error(
-        `Case-insensitive queries (mode: "insensitive") are not supported by the Convex adapter. Store values in a normalized form (e.g. lowercase on write) and query against the normalized value. Field: ${w.field}`
-      );
-    }
-  }
   return whereArray.map((w) => {
     if (w.value instanceof Date) {
       return {

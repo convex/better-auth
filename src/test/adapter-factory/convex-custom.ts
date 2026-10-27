@@ -761,7 +761,7 @@ export const convexCustomTestSuite = createTestSuite(
       expect(typeof user.createdAt).toBe("number");
     },
 
-    "should reject case-insensitive where clauses": async () => {
+    "should reject case-insensitive range operators": async () => {
       await adapter.create({
         model: "user",
         data: {
@@ -769,19 +769,21 @@ export const convexCustomTestSuite = createTestSuite(
           email: "foo@bar.com",
         },
       });
+      // Case-insensitive ordering is ambiguous; only equality/string
+      // matching operators support mode: "insensitive".
       await expect(
-        adapter.findOne({
+        adapter.findMany({
           model: "user",
           where: [
             {
               field: "email",
               value: "FOO@BAR.COM",
-              operator: "eq",
+              operator: "lt",
               mode: "insensitive",
             },
           ],
         }),
-      ).rejects.toThrow(/mode: "insensitive"/);
+      ).rejects.toThrow(/range operators/);
     },
   }),
 );

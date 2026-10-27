@@ -129,7 +129,10 @@ const findIndex = (
         ["lt", "lte", "gt", "gte", "eq", "in", "not_in"].includes(
           w.operator
         )) &&
-      w.field !== "_id"
+      w.field !== "_id" &&
+      // Convex index lookups are case-sensitive; insensitive clauses are
+      // applied as static filters instead.
+      w.mode !== "insensitive"
     );
   });
   if (!where?.length && !args.sortBy) {
@@ -340,17 +343,28 @@ const filterByWhere = <
       return val > wVal;
     };
     const filter = (w: Infer<typeof adapterWhereValidator>) => {
+      // Case-insensitive matching folds both sides to lowercase. Range
+      // operators (lt/lte/gt/gte) stay case-sensitive; paginate rejects
+      // insensitive mode for those.
+      const fold = <V>(val: V): V =>
+        w.mode === "insensitive" && typeof val === "string"
+          ? (val.toLowerCase() as V)
+          : val;
       switch (w.operator) {
         case undefined:
         case "eq": {
-          return value === w.value;
+          return fold(value) === fold(w.value);
         }
         case "in": {
-          return Array.isArray(w.value) && (w.value as any[]).includes(value);
+          return (
+            Array.isArray(w.value) &&
+            (w.value as any[]).map(fold).includes(fold(value))
+          );
         }
         case "not_in": {
           const result =
-            Array.isArray(w.value) && !(w.value as any[]).includes(value);
+            Array.isArray(w.value) &&
+            !(w.value as any[]).map(fold).includes(fold(value));
           return result;
         }
         case "lt": {
@@ -366,18 +380,25 @@ const filterByWhere = <
           return value === w.value || isGreaterThan(value, w.value);
         }
         case "ne": {
-          return value !== w.value;
+          return fold(value) !== fold(w.value);
         }
         case "contains": {
-          return typeof value === "string" && value.includes(w.value as string);
+          return (
+            typeof value === "string" &&
+            fold(value).includes(fold(w.value) as string)
+          );
         }
         case "starts_with": {
           return (
-            typeof value === "string" && value.startsWith(w.value as string)
+            typeof value === "string" &&
+            fold(value).startsWith(fold(w.value) as string)
           );
         }
         case "ends_with": {
-          return typeof value === "string" && value.endsWith(w.value as string);
+          return (
+            typeof value === "string" &&
+            fold(value).endsWith(fold(w.value) as string)
+          );
         }
       }
     };
@@ -452,12 +473,14 @@ const generateQuery = (
       doc,
       args.where,
       // Index used for all eq and range clauses, apply remaining clauses
-      // incompatible with Convex statically.
+      // incompatible with Convex statically. Insensitive clauses are always
+      // excluded from index selection, so they must be applied here too.
       (w) =>
-        w.operator &&
-        ["contains", "starts_with", "ends_with", "ne", "not_in"].includes(
-          w.operator
-        )
+        w.mode === "insensitive" ||
+        (w.operator &&
+          ["contains", "starts_with", "ends_with", "ne", "not_in"].includes(
+            w.operator
+          ))
     );
   });
   return filteredQuery;
@@ -497,17 +520,26 @@ export const paginate = async <
       `_id can only be used with eq, in, or not_in operator: ${JSON.stringify(args.where)}`
     );
   }
-  if (args.where?.some((w) => w.mode === "insensitive")) {
+  if (
+    args.where?.some(
+      (w) =>
+        w.mode === "insensitive" &&
+        w.operator &&
+        ["lt", "lte", "gt", "gte"].includes(w.operator)
+    )
+  ) {
     throw new Error(
-      `Case-insensitive queries (mode: "insensitive") are not supported by the Convex adapter. Store values in a normalized form (e.g. lowercase on write) and query against the normalized value.`
+      `Case-insensitive mode is not supported with range operators (lt/lte/gt/gte) by the Convex adapter: ${JSON.stringify(args.where)}`
     );
   }
   // If any where clause is "eq" (or missing operator) on a unique field,
   // we can only return a single document, so we get it and use any other
-  // where clauses as static filters.
+  // where clauses as static filters. Insensitive clauses can't use the
+  // index-backed unique lookup.
   const uniqueWhere = args.where?.find(
     (w) =>
       (!w.operator || w.operator === "eq") &&
+      w.mode !== "insensitive" &&
       (isUniqueField(betterAuthSchema, args.model, w.field) ||
         w.field === "_id")
   );
@@ -560,7 +592,11 @@ export const paginate = async <
   // possible with the organization plugin listing all members with a high
   // limit. For cases like this we need to create proper convex queries in
   // the component as an alternative to using Better Auth api's.
-  const inWhere = args.where?.find((w) => w.operator === "in");
+  // Insensitive "in" clauses can't fan out to index-backed point lookups;
+  // they fall through to the streaming query and are filtered statically.
+  const inWhere = args.where?.find(
+    (w) => w.operator === "in" && w.mode !== "insensitive"
+  );
   if (inWhere) {
     if (!Array.isArray(inWhere.value)) {
       throw new Error("in clause value must be an array");
