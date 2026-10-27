@@ -232,4 +232,126 @@ describe("ConvexBetterAuthProvider", () => {
       renderer.unmount();
     });
   });
+
+  test("replaces the fetcher once after a failed refresh of a hydrated SSR token", async () => {
+    // initialTokenUsed is module state, so load a fresh copy for this SSR test.
+    vi.resetModules();
+    const { ConvexBetterAuthProvider: FreshProvider } =
+      await import("./index.js");
+    let sessionState: {
+      data: { session: { id: string } } | null;
+      isPending: boolean;
+    } = { data: null, isPending: true };
+    const token = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce({ data: null })
+      .mockResolvedValue({ data: { token: "fresh-token" } });
+    const authClient = {
+      convex: { token },
+      useSession: () => sessionState,
+    } as unknown as AuthClient;
+    const client = {
+      clearAuth: vi.fn(),
+      setAuth: vi.fn(),
+    };
+    const renderProvider = () => (
+      <FreshProvider
+        authClient={authClient}
+        client={client}
+        initialToken={createSessionToken("session-a")}
+      >
+        <div />
+      </FreshProvider>
+    );
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(renderProvider());
+    });
+    sessionState = {
+      data: { session: { id: "session-a" } },
+      isPending: false,
+    };
+    await act(async () => {
+      renderer.update(renderProvider());
+    });
+    expect(client.setAuth).toHaveBeenCalledTimes(1);
+    const hydratedFetchToken = client.setAuth.mock.calls[0]?.[0];
+
+    // Convex force-refreshes an accepted cached token; if that fails it stops
+    // retrying and only calls setAuth again for a new fetchAccessToken.
+    await act(async () => {
+      await expect(
+        hydratedFetchToken?.({ forceRefreshToken: true })
+      ).resolves.toBeNull();
+    });
+    expect(client.setAuth).toHaveBeenCalledTimes(2);
+    const retryFetchToken = client.setAuth.mock.calls[1]?.[0];
+    expect(retryFetchToken).not.toBe(hydratedFetchToken);
+
+    // A second consecutive failure does not loop.
+    await act(async () => {
+      await expect(
+        retryFetchToken?.({ forceRefreshToken: false })
+      ).resolves.toBeNull();
+    });
+    expect(client.setAuth).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await expect(
+        retryFetchToken?.({ forceRefreshToken: true })
+      ).resolves.toBe("fresh-token");
+    });
+    expect(client.setAuth).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  test("does not return a token after the provider unmounts", async () => {
+    let resolvePendingToken!: (value: { data: { token: string } }) => void;
+    const pendingTokenRequest = new Promise<{ data: { token: string } }>(
+      (resolve) => {
+        resolvePendingToken = resolve;
+      }
+    );
+    const token = vi
+      .fn()
+      .mockReturnValueOnce(pendingTokenRequest)
+      .mockResolvedValue({ data: { token: "post-unmount-token" } });
+    const authClient = {
+      convex: { token },
+      useSession: () => ({
+        data: { session: { id: "session-a" } },
+        isPending: false,
+      }),
+    } as unknown as AuthClient;
+    const client = {
+      clearAuth: vi.fn(),
+      setAuth: vi.fn(),
+    };
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConvexBetterAuthProvider authClient={authClient} client={client}>
+          <div />
+        </ConvexBetterAuthProvider>
+      );
+    });
+    const fetchToken = client.setAuth.mock.calls[0]?.[0];
+    const tokenPromise = fetchToken?.({ forceRefreshToken: false });
+
+    await act(async () => {
+      renderer.unmount();
+    });
+    resolvePendingToken({ data: { token: "late-token" } });
+
+    await expect(tokenPromise).resolves.toBeNull();
+    // Convex retries with forceRefreshToken after a null token.
+    await expect(fetchToken?.({ forceRefreshToken: true })).resolves.toBeNull();
+    expect(client.setAuth).toHaveBeenCalledTimes(1);
+  });
 });

@@ -146,7 +146,11 @@ function useUseAuthFromBetterAuth(
           promise: Promise<string | null>;
         } | null>(null);
         const previousSessionIdRef = useRef(sessionId);
-        const [sessionVersion, setSessionVersion] = useState(0);
+        const [fetcherVersion, setFetcherVersion] = useState(0);
+        // A failed refresh leaves Convex signed out until fetchAccessToken
+        // changes identity, so the fetcher is replaced once per failure streak.
+        const hasRetriedFailedTokenRef = useRef(false);
+        const isUnmountedRef = useRef(false);
         const isInitialTokenSessionMismatch =
           initialTokenSessionIdRef.current !== undefined &&
           sessionId !== undefined &&
@@ -174,6 +178,16 @@ function useUseAuthFromBetterAuth(
         }, []);
 
         useEffect(() => {
+          isUnmountedRef.current = false;
+          return () => {
+            // Convex's clearAuth() does not cancel an in-flight setAuth, so a
+            // token resolved after unmount must not authenticate the client.
+            isUnmountedRef.current = true;
+            invalidatePendingToken();
+          };
+        }, [invalidatePendingToken]);
+
+        useEffect(() => {
           const previousSessionId = previousSessionIdRef.current;
           if (
             isInitialTokenSessionMismatch ||
@@ -181,8 +195,9 @@ function useUseAuthFromBetterAuth(
           ) {
             invalidatePendingToken();
             cacheToken(null);
+            hasRetriedFailedTokenRef.current = false;
             if (sessionId) {
-              setSessionVersion((version) => version + 1);
+              setFetcherVersion((version) => version + 1);
             }
           }
           previousSessionIdRef.current = sessionId;
@@ -223,28 +238,30 @@ function useUseAuthFromBetterAuth(
             }
             const requestGeneration = tokenGenerationRef.current;
             const requestId = Symbol();
+            const isCurrentRequest = () =>
+              !isUnmountedRef.current &&
+              tokenGenerationRef.current === requestGeneration &&
+              pendingTokenRef.current?.requestId === requestId;
+            const reportTokenResult = (token: string | null) => {
+              cacheToken(token);
+              if (token) {
+                hasRetriedFailedTokenRef.current = false;
+              } else if (!hasRetriedFailedTokenRef.current) {
+                hasRetriedFailedTokenRef.current = true;
+                setFetcherVersion((version) => version + 1);
+              }
+              return token;
+            };
             const tokenRequest = authClient.convex
               .token({ fetchOptions: { throw: false } })
-              .then(({ data }) => {
-                if (
-                  tokenGenerationRef.current !== requestGeneration ||
-                  pendingTokenRef.current?.requestId !== requestId
-                ) {
-                  return null;
-                }
-                const token = data?.token || null;
-                cacheToken(token);
-                return token;
-              })
-              .catch(() => {
-                if (
-                  tokenGenerationRef.current === requestGeneration &&
-                  pendingTokenRef.current?.requestId === requestId
-                ) {
-                  cacheToken(null);
-                }
-                return null;
-              })
+              .then(({ data }) =>
+                isCurrentRequest()
+                  ? reportTokenResult(data?.token || null)
+                  : null
+              )
+              .catch(() =>
+                isCurrentRequest() ? reportTokenResult(null) : null
+              )
               .finally(() => {
                 if (pendingTokenRef.current?.requestId === requestId) {
                   pendingTokenRef.current = null;
@@ -257,10 +274,11 @@ function useUseAuthFromBetterAuth(
             };
             return tokenRequest;
           },
-          // authClient changes replace this hook factory, and sessionVersion intentionally
-          // rebuilds the callback so Convex reauthenticates for a different session.
+          // authClient changes replace this hook factory, and fetcherVersion intentionally
+          // rebuilds the callback so Convex reauthenticates for a different session
+          // or after a failed token request.
           // eslint-disable-next-line react-hooks/exhaustive-deps
-          [authClient, cacheToken, isSessionReplacement, sessionVersion]
+          [authClient, cacheToken, isSessionReplacement, fetcherVersion]
         );
         return useMemo(
           () => ({
