@@ -320,6 +320,10 @@ export const Header = ({
 export default Header;
 ```
 
+Like `useQuery`, `usePreloadedAuthQuery` can return `undefined`: the preloaded
+value is dropped once auth settles as unauthenticated, and there is no live
+result to replace it. Handle it as the snippet above does.
+
 ### Using Better Auth in server code
 
 Better Auth's
