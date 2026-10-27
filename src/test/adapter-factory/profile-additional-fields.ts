@@ -10,6 +10,9 @@ export const ADDITIONAL_FIELDS_NORMAL_TESTS = [
   "deleteMany - should delete many models with numeric values",
   "findMany - should find many models with sortBy",
   "findMany - should find many models with sortBy and limit",
+  "findMany - should find many models with sortBy and limit and offset",
+  "findMany - should find many models with sortBy and limit and offset and where",
+  "findMany - should find many models with sortBy and offset",
   "findMany - should find many with join and sortBy",
   "findOne - should find a model with additional fields",
 ] as const;

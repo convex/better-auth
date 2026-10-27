@@ -308,9 +308,11 @@ export const convexAdapter = <
           });
         },
         findMany: async (data): Promise<any[]> => {
-          if (data.offset) {
-            throw new Error("offset not supported");
-          }
+          // The component paginates by cursor and has no offset support;
+          // fetch offset + limit docs and drop the first `offset` here.
+          const offset = data.offset ?? 0;
+          const fetchLimit =
+            data.limit !== undefined ? data.limit + offset : undefined;
 
           if (data.where?.some((w) => w.connector === "OR")) {
             // Always fetch full docs for OR unions so we can dedupe
@@ -321,12 +323,13 @@ export const convexAdapter = <
                 async ({ paginationOpts }) => {
                   return await ctx.runQuery(api.adapter.findMany, {
                     ...queryData,
+                    offset: undefined,
                     model: data.model as TableNames,
                     where: parseWhere(w),
                     paginationOpts,
                   });
                 },
-                { limit: data.limit }
+                { limit: fetchLimit }
               )
             );
             let docs = dedupeDocsById(results.flatMap((r) => r.docs));
@@ -336,9 +339,7 @@ export const convexAdapter = <
                 data.sortBy.direction,
               ]);
             }
-            if (data.limit !== undefined) {
-              docs = docs.slice(0, data.limit);
-            }
+            docs = docs.slice(offset, fetchLimit);
             return docs.map((doc) => selectDocFields(doc, data.select));
           }
 
@@ -346,14 +347,15 @@ export const convexAdapter = <
             async ({ paginationOpts }) => {
               return await ctx.runQuery(api.adapter.findMany, {
                 ...data,
+                offset: undefined,
                 model: data.model as TableNames,
                 where: parseWhere(data.where),
                 paginationOpts,
               });
             },
-            { limit: data.limit }
+            { limit: fetchLimit }
           );
-          return result.docs;
+          return offset ? result.docs.slice(offset) : result.docs;
         },
         count: async (data) => {
           // Yes, count is just findMany returning a number.

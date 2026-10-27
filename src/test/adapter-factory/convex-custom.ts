@@ -451,6 +451,32 @@ export const convexCustomTestSuite = createTestSuite(
         ).toEqual(user);
       },
 
+    "should apply offset to OR unions": async () => {
+      const users = [];
+      for (const letter of ["a", "b", "c", "d"]) {
+        users.push(
+          await adapter.create({
+            model: "user",
+            data: {
+              name: "offset-user",
+              email: `${letter}@offset-or.test`,
+            },
+          }),
+        );
+      }
+      const page = await adapter.findMany({
+        model: "user",
+        where: [
+          { field: "name", value: "offset-user", connector: "OR" },
+          { field: "email", value: "none@offset-or.test", connector: "OR" },
+        ],
+        sortBy: { field: "email", direction: "asc" },
+        limit: 2,
+        offset: 1,
+      });
+      expect(page).toEqual([users[1], users[2]]);
+    },
+
     "should update and count each match only once for overlapping OR clauses":
       async () => {
         const foo = await adapter.create({
