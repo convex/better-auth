@@ -63,6 +63,41 @@ export const convexCustomTestSuite = createTestSuite(
       ).toEqual([user]);
     },
 
+    "should not match an id from a different model": async () => {
+      const user = await adapter.create({
+        model: "user",
+        data: {
+          name: "cross-model",
+          email: "cross@model.com",
+        },
+      });
+      // user.id is a valid id of the user table; a lookup scoped to another
+      // model must treat it as no match instead of returning the user doc.
+      expect(
+        await adapter.findOne({
+          model: "session",
+          where: [
+            {
+              field: "id",
+              value: user.id,
+            },
+          ],
+        }),
+      ).toEqual(null);
+      expect(
+        await adapter.findMany({
+          model: "session",
+          where: [
+            {
+              field: "id",
+              operator: "in",
+              value: [user.id],
+            },
+          ],
+        }),
+      ).toEqual([]);
+    },
+
     "should handle compound indexes that include id field": async () => {
       const user = await adapter.create({
         model: "user",

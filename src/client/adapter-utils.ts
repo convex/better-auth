@@ -1,6 +1,6 @@
 import { asyncMap } from "convex-helpers";
 import { v } from "convex/values";
-import type { GenericId, Infer } from "convex/values";
+import type { Infer } from "convex/values";
 import type {
   DocumentByName,
   GenericDataModel,
@@ -522,11 +522,17 @@ export const paginate = async <
         `No index found for ${args.model}.${uniqueWhere.field}`
       );
     }
+    // Resolve _id values through the requested model. normalizeId returns
+    // null when the id belongs to a different table or isn't a valid id at
+    // all (e.g. better-auth's adapter tests pass in UUIDs as values), both
+    // of which mean "no match" here.
+    const uniqueWhereId =
+      uniqueWhere.field === "_id" && typeof uniqueWhere.value === "string"
+        ? ctx.db.normalizeId(args.model as T, uniqueWhere.value)
+        : null;
     const doc =
       uniqueWhere.field === "_id"
-        ? // Unfortunately this is one place where tests pass in UUIDs as values and convex-test doesn't support them
-          // eslint-disable-next-line @convex-dev/explicit-table-ids
-          await ctx.db.get(uniqueWhere.value as GenericId<T>)
+        ? uniqueWhereId && (await ctx.db.get(args.model, uniqueWhereId))
         : await ctx.db
             .query(args.model as any)
             .withIndex(index?.indexDescriptor as any, (q) =>
@@ -568,7 +574,13 @@ export const paginate = async <
     // For ids, just use asyncMap + .get()
     if (inWhere.field === "_id") {
       const docs = await asyncMap(inWhere.value as any[], async (value) => {
-        return ctx.db.get(args.model, value as GenericId<T>);
+        // Same model scoping as the unique _id branch above: foreign or
+        // invalid ids are filtered out instead of matching or throwing.
+        const id =
+          typeof value === "string"
+            ? ctx.db.normalizeId(args.model as T, value)
+            : null;
+        return id && (await ctx.db.get(args.model, id));
       });
       const filteredDocs = docs
         .flatMap((doc) => (doc ? [doc] : []))
