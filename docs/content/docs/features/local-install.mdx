@@ -249,6 +249,58 @@ custom indexes aren't overwritten when the schema is regenerated.
   </div>
 </div>
 
+### Querying auth tables from app code
+
+When you read or write Better Auth tables from your app (outside the component),
+use `authComponent.typedAdapter`. It wraps the adapter the same way as
+`ctx.runQuery(components.betterAuth.adapter.findOne, …)` but infers document
+types from `model`, and type-checks `where`, `select`, and `sortBy` against that
+table.
+
+**1. Pass your local schema to `createClient`** (from the install step above):
+
+```ts title="convex/auth.ts"
+import { createClient } from "@convex-dev/better-auth";
+import authSchema from "./betterAuth/schema";
+import { components } from "./_generated/api";
+import { type DataModel } from "./_generated/dataModel";
+
+export const authComponent = createClient<DataModel, typeof authSchema>(
+  components.betterAuth,
+  { local: { schema: authSchema } }
+);
+
+export const createAuth = (ctx: GenericCtx<DataModel>) => {
+  return betterAuth({
+    database: authComponent.adapter(ctx),
+    // ... rest of auth config
+  });
+};
+```
+
+**2. Call `typedAdapter` from your queries and mutations:**
+
+```ts title="convex/users.ts"
+import { query } from "./_generated/server";
+import { v } from "convex/values";
+import { authComponent } from "./auth";
+
+export const getUserByEmail = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await authComponent.typedAdapter.findOne(ctx, {
+      model: "user",
+      where: [{ field: "email", value: args.email }],
+    });
+    // Doc<"user"> | null — inferred from model
+  },
+});
+```
+
+`typedAdapter` exposes the same methods as the adapter API: `findOne`, `findMany`,
+`create`, `updateOne`, `updateMany`, `deleteOne`, and `deleteMany`. See
+[Type Utilities](/api/type-utilities#typedadapter-on-the-component-client).
+
 ### Accessing component data
 
 Convex functions within your Better Auth component directory can access the
@@ -265,6 +317,8 @@ internet, even if they are public**.
   If a function in a component is called from outside the component, the return
   type won't be inferred unless a return validator is provided.
 </Callout>
+
+#### Custom component functions
 
 ```ts title="convex/betterAuth/someFile.ts"
 import { query, mutation } from "./_generated/server";

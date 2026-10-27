@@ -4,7 +4,6 @@ import {
   queryGeneric,
 } from "convex/server";
 import type {
-  DataModelFromSchemaDefinition,
   FunctionReference,
   GenericDataModel,
   GenericMutationCtx,
@@ -15,8 +14,10 @@ import type {
 import { ConvexError, v } from "convex/values";
 import type { Infer } from "convex/values";
 import { convexAdapter } from "./adapter.js";
+import { createTypedAdapter } from "./create-typed-adapter.js";
+import type { AdapterFunctions, TypedAdapter } from "./create-typed-adapter.js";
 import { corsRouter } from "convex-helpers/server/cors";
-import type defaultSchema from "../component/schema.js";
+import defaultSchema from "../component/schema.js";
 import type { CreateAuth, GenericCtx } from "./index.js";
 import type { TrustedOriginsOption } from "../utils/index.js";
 
@@ -179,14 +180,18 @@ export const createClient = <
     | { triggers?: undefined }
   )
 ) => {
-  type BetterAuthDataModel = DataModelFromSchemaDefinition<Schema>;
+  const adapterSchema = config?.local?.schema ?? defaultSchema;
+  const typedAdapter = createTypedAdapter(
+    adapterSchema,
+    component.adapter as AdapterFunctions
+  ) as TypedAdapter<Schema>;
 
   const safeGetAuthUser = async (ctx: GenericCtx<DataModel>) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       return;
     }
-    const session = (await ctx.runQuery(component.adapter.findOne, {
+    const session = await typedAdapter.findOne(ctx, {
       model: "session",
       where: [
         {
@@ -199,13 +204,13 @@ export const createClient = <
           value: new Date().getTime(),
         },
       ],
-    })) as BetterAuthDataModel["session"]["document"] | null;
+    });
 
     if (!session) {
       return;
     }
 
-    const doc = (await ctx.runQuery(component.adapter.findOne, {
+    const doc = await typedAdapter.findOne(ctx, {
       model: "user",
       where: [
         {
@@ -213,7 +218,7 @@ export const createClient = <
           value: identity.subject,
         },
       ],
-    })) as BetterAuthDataModel["user"]["document"] | null;
+    });
     if (!doc) {
       return;
     }
@@ -234,7 +239,7 @@ export const createClient = <
       return new Headers();
     }
     // Don't validate the session here, let Better Auth handle that
-    const session = await ctx.runQuery(component.adapter.findOne, {
+    const session = await typedAdapter.findOne(ctx, {
       model: "session",
       where: [
         {
@@ -262,6 +267,14 @@ export const createClient = <
         ...config,
         debugLogs: config?.verbose,
       }),
+
+    /**
+     * Typed wrappers around `components.betterAuth.adapter` queries and
+     * mutations. Use this instead of calling
+     * `ctx.runQuery(components.betterAuth.adapter.findOne, …)` directly when
+     * you need document types inferred from the `model` argument.
+     */
+    typedAdapter,
 
     /**
      * Returns the Better Auth auth object and headers for using Better Auth API
@@ -315,10 +328,10 @@ export const createClient = <
      * @returns The user or null if the user is not found
      */
     getAnyUserById: async (ctx: GenericCtx<DataModel>, id: string) => {
-      return (await ctx.runQuery(component.adapter.findOne, {
+      return await typedAdapter.findOne(ctx, {
         model: "user",
         where: [{ field: "_id", value: id }],
-      })) as BetterAuthDataModel["user"]["document"] | null;
+      });
     },
 
     /**

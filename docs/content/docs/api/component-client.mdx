@@ -25,6 +25,33 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 });
 ```
 
+## `typedAdapter`
+
+Typed wrappers around `components.betterAuth.adapter` for use in your Convex
+functions. Prefer this over calling
+`ctx.runQuery(components.betterAuth.adapter.findOne, …)` directly — `model`
+narrows return types, and `where`, `select`, and `sortBy` are checked against
+that table's fields.
+
+With [local install](/features/local-install), pass your schema in `createClient`
+config. See [Type Utilities](/api/type-utilities#typedadapter-on-the-component-client).
+
+```ts
+import { query } from "./_generated/server";
+import { v } from "convex/values";
+import { authComponent } from "./auth";
+
+export const getUserByEmail = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await authComponent.typedAdapter.findOne(ctx, {
+      model: "user",
+      where: [{ field: "email", value: args.email }],
+    });
+  },
+});
+```
+
 ## `getAuth()`
 
 Better Auth [API endpoints](https://www.better-auth.com/docs/concepts/api) can

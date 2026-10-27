@@ -3,6 +3,75 @@ title: Type Utilities
 description: Type utilities for Better Auth
 ---
 
+## `typedAdapter` on the component client
+
+The recommended wrapper for typed adapter calls. `createClient` exposes
+`typedAdapter` so you don't call
+`ctx.runQuery(components.betterAuth.adapter.findOne, …)` directly — use
+`authComponent.typedAdapter.findOne(ctx, …)` instead. The `model` argument
+narrows return types, and `where`, `select`, and `sortBy` (on `findMany`) are
+checked against that table's fields.
+
+With [local install](/features/local-install), pass your schema in
+`createClient` config so types match your tables (including plugin tables):
+
+```ts title="convex/auth.ts"
+import { createClient } from "@convex-dev/better-auth";
+import authSchema from "./betterAuth/schema";
+import { components } from "./_generated/api";
+import { type DataModel } from "./_generated/dataModel";
+
+export const authComponent = createClient<DataModel, typeof authSchema>(
+  components.betterAuth,
+  { local: { schema: authSchema } }
+);
+```
+
+```ts title="convex/users.ts"
+import { query } from "./_generated/server";
+import { v } from "convex/values";
+import { authComponent } from "./auth";
+
+export const getUserByEmail = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await authComponent.typedAdapter.findOne(ctx, {
+      model: "user",
+      where: [{ field: "email", value: args.email }],
+      select: ["email", "name"],
+    });
+    // Pick<Doc<"user">, "email" | "name"> | null
+  },
+});
+```
+
+## `createTypedAdapter()`
+
+Lower-level helper when you need to build a typed wrapper yourself (same
+methods as `typedAdapter`). `createClient` uses this internally.
+
+```ts
+import { createTypedAdapter } from "@convex-dev/better-auth";
+import schema from "./betterAuth/schema";
+import { components } from "./_generated/api";
+
+export const adapter = createTypedAdapter(schema, components.betterAuth.adapter);
+```
+
+The adapter exposes the same operations as
+[`createApi`](/features/local-install#export-adapter-functions): `findOne`,
+`findMany`, `create`, `updateOne`, `updateMany`, `deleteOne`, and `deleteMany`.
+
+### Exported types
+
+| Type | Description |
+| --- | --- |
+| `TypedAdapter<S>` | Return type of `createTypedAdapter` for schema `S` |
+| `AdapterFunctions` | Function references passed as the second argument |
+| `AdapterWhere<S, T>` | Where-clause for table `T` in schema `S`; `field` and `value` narrow with the model |
+| `SortBy<S, T>` | `{ direction: "asc" \| "desc"; field: … }` for `findMany`; `field` narrows with the model |
+| `BatchResult` | Paginated batch result from `updateMany` and `deleteMany` |
+
 ## `requireRunMutationCtx()`
 
 A type guard to ensure a given context object has a `runMutation` property.

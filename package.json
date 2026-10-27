@@ -91,6 +91,10 @@
     "./utils": {
       "types": "./dist/utils/index.d.ts",
       "default": "./dist/utils/index.js"
+    },
+    "./typed-adapter": {
+      "types": "./dist/client/create-typed-adapter.d.ts",
+      "default": "./dist/client/create-typed-adapter.js"
     }
   },
   "typesVersions": {
