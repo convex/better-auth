@@ -100,6 +100,30 @@ convex({
 });
 ```
 
+#### `jwksCacheMaxAgeSeconds`
+
+How long the JWKS endpoint response may be cached, in seconds. Defaults to `60`.
+The Convex backend fetches the JWKS url through an http cache while validating a
+token, so a cache lifetime turns one request per validation into one request per
+active cache window. Set it to `0` to send no `Cache-Control` header.
+
+```ts
+convex({
+  authConfig,
+  jwksCacheMaxAgeSeconds: 300,
+});
+```
+
+<Callout>
+  Convex does not refetch the JWKS when it sees an unknown `kid`, so after a key
+  rotation tokens signed with the new key are rejected until the cached set
+  expires, up to `jwksCacheMaxAgeSeconds` seconds. Revocation lags the same way:
+  `rotateKeys` deletes the old key set, while an already cached response still
+  carries the removed public key, so tokens signed with a revoked key keep
+  validating until that cache entry expires. Lower the value or set it to `0` if
+  you rotate keys and cannot tolerate either window.
+</Callout>
+
 #### `options`
 
 Optional Better Auth options, primarily used to pass the `basePath` when using a

@@ -91,8 +91,12 @@ then validated using the JWKS.
 
 By default the Better Auth Component uses Convex's
 [`customJwt`](https://docs.convex.dev/auth/advanced/custom-jwt) to avoid the
-OIDC request by providing the JWKS url statically in the auth config. Static
-JWKS avoids both calls by providing the JWKS itself as a data uri.
+OIDC request by providing the JWKS url statically in the auth config, and serves
+that url with a short cache lifetime so the backend fetches it about once per
+cache window rather than once per validation (see
+[`jwksCacheMaxAgeSeconds`](/docs/api/convex-plugin#jwkscachemaxageseconds)).
+Static JWKS avoids both calls entirely by providing the JWKS itself as a data
+uri.
 
 First, add an internal mutation to get the latest JWKS. A new key may be
 written, so this must be a mutation.

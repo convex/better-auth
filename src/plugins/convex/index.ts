@@ -39,6 +39,20 @@ const getJwksAlg = (authProvider: AuthProvider) => {
   return isCustomJwt ? authProvider.algorithm : "EdDSA";
 };
 
+const DEFAULT_JWKS_CACHE_MAX_AGE_SECONDS = 60;
+
+const parseJwksCacheMaxAgeSeconds = (seconds: number | undefined) => {
+  if (seconds === undefined) {
+    return DEFAULT_JWKS_CACHE_MAX_AGE_SECONDS;
+  }
+  if (!Number.isSafeInteger(seconds) || seconds < 0) {
+    throw new Error(
+      "jwksCacheMaxAgeSeconds must be a non-negative integer number of seconds"
+    );
+  }
+  return seconds;
+};
+
 const parseAuthConfig = (authConfig: AuthConfig, opts: { jwks?: string }) => {
   const providerConfigs = authConfig.providers.filter(
     (provider) => provider.applicationID === "convex"
@@ -158,6 +172,27 @@ export const convex = (opts: {
    */
   jwks?: string;
   /**
+   * @param {number} jwksCacheMaxAgeSeconds - How long the JWKS endpoint response may be cached, in seconds.
+   *
+   * The Convex backend fetches the JWKS url through an http cache while
+   * validating a token. Without a cache lifetime the response is revalidated
+   * on every validation, costing a request and a database read each time.
+   * Set to `0` to send no `Cache-Control` header.
+   *
+   * The trade-off: Convex does not refetch when it sees an unknown `kid`, so
+   * after a key rotation tokens signed with the new key are rejected until the
+   * cached set expires, up to this many seconds. Revocation lags the same way:
+   * `rotateKeys` deletes the old key set, while an already cached response
+   * still carries the removed public key, so tokens signed with a revoked key
+   * keep validating until that cache entry expires. Lowering this value, or
+   * setting `0`, shrinks both windows. Concurrent cache misses are not
+   * coalesced either, so several validations that miss at the same instant
+   * each fetch once.
+   *
+   * @default 60
+   */
+  jwksCacheMaxAgeSeconds?: number;
+  /**
    * @param {boolean} jwksRotateOnTokenGenerationError - Whether to rotate the JWKS on token generation error.
    *
    * Does nothing if a static JWKS is provided.
@@ -174,6 +209,9 @@ export const convex = (opts: {
    */
   options?: BetterAuthOptions;
 }) => {
+  const jwksCacheMaxAgeSeconds = parseJwksCacheMaxAgeSeconds(
+    opts.jwksCacheMaxAgeSeconds
+  );
   const jwtExpirationSeconds =
     opts.jwt?.expirationSeconds ?? opts.jwtExpirationSeconds ?? 60 * 15;
   const oidcProvider = oidcProviderPlugin({
@@ -481,6 +519,12 @@ export const convex = (opts: {
           },
         },
         async (ctx) => {
+          if (jwksCacheMaxAgeSeconds > 0) {
+            ctx.setHeader(
+              "cache-control",
+              `public, max-age=${jwksCacheMaxAgeSeconds}, must-revalidate`
+            );
+          }
           const response = await jwt.endpoints.getJwks({
             ...ctx,
             asResponse: false,
