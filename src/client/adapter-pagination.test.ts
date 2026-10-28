@@ -9,7 +9,7 @@ import { createClient } from "./index.js";
 import type { DataModel } from "../component/_generated/dataModel.js";
 
 /**
- * Regression test for get-convex/better-auth#392: count() is an unlimited
+ * Regression test for convex/better-auth#392: count() is an unlimited
  * paginated findMany and must terminate over result sets larger than the
  * 200-row page size. The runQuery cap turns a non-terminating loop into a
  * fast, clear failure instead of running to the function's wall-clock limit,

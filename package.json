@@ -1,10 +1,10 @@
 {
   "name": "@convex-dev/better-auth",
   "description": "A Better Auth component for Convex.",
-  "repository": "github:get-convex/better-auth",
-  "homepage": "https://github.com/get-convex/better-auth#readme",
+  "repository": "github:convex/better-auth",
+  "homepage": "https://github.com/convex/better-auth#readme",
   "bugs": {
-    "url": "https://github.com/get-convex/better-auth/issues"
+    "url": "https://github.com/convex/better-auth/issues"
   },
   "version": "0.12.6",
   "license": "Apache-2.0",

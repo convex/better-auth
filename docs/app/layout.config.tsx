@@ -36,6 +36,6 @@ export const baseOptions: BaseLayoutProps = {
       </>
     ),
   },
-  githubUrl: "https://github.com/get-convex/better-auth",
+  githubUrl: "https://github.com/convex/better-auth",
   links: [],
 };
