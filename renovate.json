@@ -3,7 +3,7 @@
   "extends": ["config:best-practices"],
   "schedule": ["* * * * 1-5"],
   "timezone": "America/Los_Angeles",
-  "minimumReleaseAge": "14 days",
+  "minimumReleaseAge": "30 days",
   "packageRules": [
     {
       "groupName": "Routine updates",
