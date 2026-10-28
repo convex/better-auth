@@ -1,7 +1,7 @@
 // Run a command against a fresh local backend, handling setup and teardown.
 // Downloads the latest prebuilt Convex local backend binary if needed.
 //
-// Adapted from https://github.com/get-convex/convex-auth/blob/main/test-nextjs/backendHarness.js
+// Adapted from https://github.com/convex/convex-auth/blob/main/test-nextjs/backendHarness.js
 
 import http from "node:http";
 import fsPromises from "node:fs/promises";
