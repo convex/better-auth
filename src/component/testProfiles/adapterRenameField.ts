@@ -7,6 +7,7 @@ export const {
   findOne,
   findMany,
   updateOne,
+  incrementOne,
   updateMany,
   deleteOne,
   deleteMany,

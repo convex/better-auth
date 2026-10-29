@@ -5,7 +5,6 @@ import { emailOTP } from "better-auth/plugins/email-otp";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { jwt } from "better-auth/plugins/jwt";
 import { magicLink } from "better-auth/plugins/magic-link";
-import { oidcProvider } from "better-auth/plugins/oidc-provider";
 import { oneTimeToken } from "better-auth/plugins/one-time-token";
 import { phoneNumber } from "better-auth/plugins/phone-number";
 import { twoFactor } from "better-auth/plugins/two-factor";
@@ -34,10 +33,6 @@ export const options = {
           providerId: "",
         },
       ],
-    }),
-    oidcProvider({
-      loginPage: "/login",
-      __skipDeprecationWarning: true,
     }),
     bearer(),
     oneTimeToken(),

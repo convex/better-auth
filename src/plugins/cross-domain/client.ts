@@ -10,10 +10,13 @@ interface StoredCookie {
 }
 
 type CrossDomainActions = {
+  crossDomainCapability: typeof crossDomainCapability;
   getCookie: () => string;
   updateSession: () => void;
   getSessionData: () => Record<string, unknown> | null;
 };
+
+export const crossDomainCapability = () => true;
 
 type CrossDomainClientPlugin = Omit<
   BetterAuthClientPlugin,
@@ -93,6 +96,7 @@ export const crossDomainClient = (
     getActions(_, $store) {
       store = $store;
       return {
+        crossDomainCapability,
         /**
          * Get the stored cookie.
          *
