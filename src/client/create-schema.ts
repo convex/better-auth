@@ -16,7 +16,13 @@ const resolveCdTarget = (
 // Manually add fields to index on for schema generation,
 // all fields in the schema specialFields are automatically indexed
 export const indexFields = {
-  account: ["accountId", ["accountId", "providerId"], ["providerId", "userId"]],
+  account: [
+    "accountId",
+    ["accountId", "providerId"],
+    ["providerId", "userId"],
+    ["userId", "providerId", "accountId"],
+    "userId",
+  ],
   rateLimit: ["key"],
   session: ["expiresAt", ["expiresAt", "userId"]],
   verification: ["expiresAt", "identifier"],
@@ -53,10 +59,14 @@ const specialFields = (tables: BetterAuthDBSchema) =>
 const mergedIndexFields = (tables: BetterAuthDBSchema) =>
   Object.fromEntries(
     Object.entries(tables).map(([key, table]) => {
-      const manualIndexes =
+      const schemaIndexes =
+        table.indexes?.map((index) =>
+          index.fields.map((field) => table.fields[field]?.fieldName ?? field)
+        ) ?? [];
+      const manualIndexes: string[][] =
         indexFields[key as keyof typeof indexFields]?.map((index) => {
           return typeof index === "string"
-            ? (table.fields[index]?.fieldName ?? index)
+            ? [table.fields[index]?.fieldName ?? index]
             : index.map((i) => table.fields[i]?.fieldName ?? i);
         }) || [];
       const specialFieldIndexes = Object.keys(
@@ -64,11 +74,25 @@ const mergedIndexFields = (tables: BetterAuthDBSchema) =>
           {}
       ).filter(
         (index) =>
-          !manualIndexes.some((m) =>
-            Array.isArray(m) ? m[0] === index : m === index
-          )
+          !manualIndexes.some((manualIndex) => manualIndex[0] === index)
       );
-      return [key, manualIndexes.concat(specialFieldIndexes)];
+      const indexes = schemaIndexes.concat(
+        manualIndexes,
+        specialFieldIndexes.map((field) => [field])
+      );
+      const deduplicated = indexes.filter((index, indexPosition) => {
+        return (
+          indexes.findIndex((candidate) => {
+            return (
+              candidate.length === index.length &&
+              candidate.every(
+                (field, fieldPosition) => field === index[fieldPosition]
+              )
+            );
+          }) === indexPosition
+        );
+      });
+      return [key, deduplicated];
     })
   );
 
@@ -110,7 +134,10 @@ export const createSchema = async ({
     projectRoot !== null
       ? path.relative(projectRoot, cwd).split(path.sep).join("/")
       : null;
-  const generateCommand = `npx auth generate${file ? ` --output ${file}` : ""}`;
+  const outputPath = file ? path.relative(cwd, file) : file;
+  const generateCommand = `npx auth generate${
+    outputPath ? ` --output ${outputPath}` : ""
+  }`;
   const cdTarget = resolveCdTarget(relativeDir, path.basename(cwd));
   const commandBlock = cdTarget
     ? ` *   cd ${cdTarget}\n *   ${generateCommand}`
@@ -167,7 +194,7 @@ export const tables = {
       mergedIndexFields(tables)[
         tableKey as keyof typeof mergedIndexFields
       ]?.map((index) => {
-        const indexArray = Array.isArray(index) ? index.sort() : [index];
+        const indexArray = Array.isArray(index) ? index : [index];
         const indexName = indexArray.join("_");
         return `.index("${indexName}", ${JSON.stringify(indexArray)})`;
       }) || [];

@@ -3,6 +3,7 @@ import type { DBAdapterDebugLogOption } from "better-auth/adapters";
 import { createFunctionHandle } from "convex/server";
 import type {
   FunctionHandle,
+  FunctionReference,
   GenericActionCtx,
   GenericDataModel,
   PaginationOptions,
@@ -17,10 +18,9 @@ import { asyncMap } from "convex-helpers";
 import { prop, sortBy } from "remeda";
 import { isRunMutationCtx } from "../utils/index.js";
 import type { Doc, TableNames } from "../component/_generated/dataModel.js";
-import type { ComponentApi } from "../component/_generated/component.js";
 import type { AuthFunctions, GenericCtx, Triggers } from "./index.js";
 
-let didWarnExperimentalJoinsUnsupported = false;
+let didWarnJoinsUnsupported = false;
 
 const handlePagination = async (
   next: ({
@@ -46,11 +46,9 @@ const handlePagination = async (
   const onResult = (
     result: SetOptional<PaginationResult<any>, "page"> & { count?: number }
   ) => {
-    state.cursor =
-      result.pageStatus === "SplitRecommended" ||
-      result.pageStatus === "SplitRequired"
-        ? (result.splitCursor ?? result.continueCursor)
-        : result.continueCursor;
+    // splitCursor divides the page we already received. Continuing there would
+    // revisit its second half and double-count reads and mutations.
+    state.cursor = result.continueCursor;
     if (result.page) {
       state.docs.push(...result.page);
       state.isDone = (limit && state.docs.length >= limit) || result.isDone;
@@ -84,8 +82,7 @@ const handlePagination = async (
     // A page that returns nothing and doesn't advance the cursor while !isDone
     // can never terminate; fail loudly instead of looping forever.
     const advanced = state.cursor !== cursorBeforePage;
-    const produced =
-      (result.page?.length ?? 0) > 0 || (result.count ?? 0) > 0;
+    const produced = (result.page?.length ?? 0) > 0 || (result.count ?? 0) > 0;
     if (!state.isDone && !advanced && !produced) {
       throw new Error(
         "handlePagination made no forward progress; aborting to avoid an infinite pagination loop"
@@ -184,7 +181,16 @@ export const convexAdapter = <
 >(
   ctx: Ctx,
   api: {
-    adapter: ComponentApi["adapter"];
+    adapter: {
+      create: FunctionReference<"mutation", "internal">;
+      findOne: FunctionReference<"query", "internal">;
+      findMany: FunctionReference<"query", "internal">;
+      updateOne: FunctionReference<"mutation", "internal">;
+      incrementOne: FunctionReference<"mutation", "internal">;
+      updateMany: FunctionReference<"mutation", "internal">;
+      deleteOne: FunctionReference<"mutation", "internal">;
+      deleteMany: FunctionReference<"mutation", "internal">;
+    };
   },
   config: {
     debugLogs?: DBAdapterDebugLogOption;
@@ -228,16 +234,19 @@ export const convexAdapter = <
     adapter: ({ options }) => {
       // Disable telemetry in all cases because it requires Node
       options.telemetry = { enabled: false };
-      if (options.experimental?.joins) {
-        options.experimental = {
-          ...options.experimental,
-          joins: false,
+      if (options.advanced?.database?.joins) {
+        options.advanced = {
+          ...options.advanced,
+          database: {
+            ...options.advanced.database,
+            joins: false,
+          },
         };
-        if (!didWarnExperimentalJoinsUnsupported) {
-          didWarnExperimentalJoinsUnsupported = true;
+        if (!didWarnJoinsUnsupported) {
+          didWarnJoinsUnsupported = true;
           // eslint-disable-next-line no-console
           console.warn(
-            "[convex-better-auth] Better Auth experimental.joins is not supported by the Convex adapter yet. Forcing experimental.joins = false."
+            "[convex-better-auth] Better Auth advanced.database.joins is not supported by the Convex adapter yet. Forcing advanced.database.joins = false."
           );
         }
       }
@@ -247,15 +256,13 @@ export const convexAdapter = <
         where: (Where & { join?: undefined })[];
       }) => {
         const results = await asyncMap(data.where, async (w) =>
-          handlePagination(
-            async ({ paginationOpts }) => {
-              return await ctx.runQuery(api.adapter.findMany, {
-                model: data.model as TableNames,
-                where: parseWhere(w),
-                paginationOpts,
-              });
-            }
-          )
+          handlePagination(async ({ paginationOpts }) => {
+            return await ctx.runQuery(api.adapter.findMany, {
+              model: data.model as TableNames,
+              where: parseWhere(w),
+              paginationOpts,
+            });
+          })
         );
         const ids = dedupeDocsById(results.flatMap((r) => r.docs))
           .map((doc) => getDocId(doc))
@@ -288,7 +295,8 @@ export const convexAdapter = <
             onCreateHandle: onCreateHandle,
           });
         },
-        findOne: async (data): Promise<any> => {
+        // modelKey is Better Auth metadata, not a Convex component argument.
+        findOne: async ({ modelKey: _modelKey, ...data }): Promise<any> => {
           if (data.where?.every((w) => w.connector === "OR")) {
             for (const w of data.where) {
               const result = await ctx.runQuery(api.adapter.findOne, {
@@ -307,7 +315,7 @@ export const convexAdapter = <
             where: parseWhere(data.where),
           });
         },
-        findMany: async (data): Promise<any[]> => {
+        findMany: async ({ modelKey: _modelKey, ...data }): Promise<any[]> => {
           if (data.offset) {
             throw new Error("offset not supported");
           }
@@ -355,7 +363,7 @@ export const convexAdapter = <
           );
           return result.docs;
         },
-        count: async (data) => {
+        count: async ({ modelKey: _modelKey, ...data }) => {
           // Yes, count is just findMany returning a number.
           if (data.where?.some((w) => w.connector === "OR")) {
             const results = await asyncMap(data.where, async (w) =>
@@ -410,6 +418,52 @@ export const convexAdapter = <
             onUpdateHandle: onUpdateHandle,
           });
         },
+        consumeOne: async (data): Promise<any> => {
+          if (!("runMutation" in ctx)) {
+            throw new Error("ctx is not a mutation ctx");
+          }
+          if (!data.where.length) {
+            return null;
+          }
+          const onDeleteHandle =
+            config.authFunctions?.onDelete &&
+            config.triggers?.[data.model]?.onDelete
+              ? ((await createFunctionHandle(
+                  config.authFunctions.onDelete
+                )) as FunctionHandle<"mutation">)
+              : undefined;
+          return ctx.runMutation(api.adapter.deleteOne, {
+            input: {
+              model: data.model as TableNames,
+              where: parseWhere(data.where),
+            },
+            onDeleteHandle,
+          });
+        },
+        incrementOne: async (data): Promise<any> => {
+          if (!("runMutation" in ctx)) {
+            throw new Error("ctx is not a mutation ctx");
+          }
+          if (!data.where.length) {
+            return null;
+          }
+          const onUpdateHandle =
+            config.authFunctions?.onUpdate &&
+            config.triggers?.[data.model]?.onUpdate
+              ? ((await createFunctionHandle(
+                  config.authFunctions.onUpdate
+                )) as FunctionHandle<"mutation">)
+              : undefined;
+          return ctx.runMutation(api.adapter.incrementOne, {
+            input: {
+              model: data.model as TableNames,
+              where: parseWhere(data.where),
+              increment: data.increment,
+              set: data.set as any,
+            },
+            onUpdateHandle,
+          });
+        },
         delete: async (data) => {
           if (!("runMutation" in ctx)) {
             throw new Error("ctx is not a mutation ctx");
@@ -429,7 +483,7 @@ export const convexAdapter = <
             onDeleteHandle: onDeleteHandle,
           });
         },
-        deleteMany: async (data) => {
+        deleteMany: async ({ modelKey: _modelKey, ...data }) => {
           if (!("runMutation" in ctx)) {
             throw new Error("ctx is not a mutation ctx");
           }
@@ -469,7 +523,7 @@ export const convexAdapter = <
           });
           return result.count;
         },
-        updateMany: async (data) => {
+        updateMany: async ({ modelKey: _modelKey, ...data }) => {
           if (!("runMutation" in ctx)) {
             throw new Error("ctx is not a mutation ctx");
           }

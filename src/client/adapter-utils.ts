@@ -58,33 +58,54 @@ export const adapterArgsValidator = v.object({
   offset: v.optional(v.number()),
 });
 
+const getUniqueConstraints = (
+  betterAuthSchema: BetterAuthDBSchema,
+  model: string
+) => {
+  const table = Object.values(betterAuthSchema).find(
+    (value) => value.modelName === model
+  );
+  if (!table) {
+    return [];
+  }
+  const singleFieldConstraints = Object.entries(table.fields)
+    .filter(([, value]) => value.unique)
+    .map(([key, value]) => [value.fieldName ?? key]);
+  const tableConstraints =
+    table.indexes
+      ?.filter((index) => index.unique)
+      .map((index) =>
+        index.fields.map((field) => table.fields[field]?.fieldName ?? field)
+      ) ?? [];
+  return [...singleFieldConstraints, ...tableConstraints];
+};
 const isUniqueField = (
   betterAuthSchema: BetterAuthDBSchema,
   model: string,
   field: string
-) => {
-  const fields = Object.values(betterAuthSchema).find(
-    (value) => value.modelName === model
-  )?.fields;
-  if (!fields) {
-    return false;
-  }
-  return Object.entries(fields)
-    .filter(([, value]) => value.unique)
-    .map(([key]) => key)
-    .includes(field);
-};
+) =>
+  getUniqueConstraints(betterAuthSchema, model).some(
+    (constraint) => constraint.length === 1 && constraint[0] === field
+  );
 export const hasUniqueFields = (
   betterAuthSchema: BetterAuthDBSchema,
   model: string,
   input: Record<string, any>
 ) => {
-  for (const field of Object.keys(input)) {
-    if (isUniqueField(betterAuthSchema, model, field)) {
-      return true;
-    }
-  }
-  return false;
+  const inputFields = new Set(Object.keys(input));
+  return getUniqueConstraints(betterAuthSchema, model).some((constraint) =>
+    constraint.every((field) => inputFields.has(field))
+  );
+};
+export const touchesUniqueFields = (
+  betterAuthSchema: BetterAuthDBSchema,
+  model: string,
+  input: Record<string, any>
+) => {
+  const inputFields = new Set(Object.keys(input));
+  return getUniqueConstraints(betterAuthSchema, model).some((constraint) =>
+    constraint.some((field) => inputFields.has(field))
+  );
 };
 
 const findIndex = (
@@ -170,10 +191,7 @@ const findIndex = (
   const indexEqFields =
     where
       ?.filter((w) => !w.operator || w.operator === "eq")
-      .sort((a, b) => {
-        return a.field.localeCompare(b.field);
-      })
-      .map((w) => [w.field, w.value]) ?? [];
+      .map((w) => [w.field, w.value] as const) ?? [];
   if (!indexEqFields?.length && !boundField && !args.sortBy) {
     return;
   }
@@ -185,8 +203,16 @@ const findIndex = (
   const sortField = args.sortBy?.field;
 
   // We internally use _creationTime in place of Better Auth's createdAt
-  const indexFields = indexEqFields
-    .map(([field]) => field)
+  const eqFields = indexEqFields.map(([field]) => field);
+  const eqValues = new Map(indexEqFields);
+  const suffixFields = [
+    boundField && boundField !== "createdAt" ? boundField : "",
+    sortField && sortField !== "createdAt" && boundField !== sortField
+      ? sortField
+      : "",
+  ].filter(Boolean);
+  const indexFields = [...eqFields]
+    .sort((a, b) => a.localeCompare(b))
     .concat(boundField && boundField !== "createdAt" ? boundField : "")
     .concat(
       sortField && sortField !== "createdAt" && boundField !== sortField
@@ -204,18 +230,35 @@ const findIndex = (
         indexDescriptor: "by_creation_time",
         fields: [],
       }
-    : indexes.find(({ fields }: { fields: string[] }) => {
-        const fieldsMatch = indexFields.every(
-          (field, idx) => field === fields[idx]
-        );
-        // If sorting by createdAt, no intermediate fields can be on the index
-        // as they may override the createdAt sort order.
-        const boundFieldMatch =
-          boundField === "createdAt" || sortField === "createdAt"
-            ? indexFields.length === fields.length
-            : true;
-        return fieldsMatch && boundFieldMatch;
-      });
+    : (indexes.find(({ fields }: { fields: string[] }) =>
+        matchesIndex(fields, true)
+      ) ??
+      indexes.find(({ fields }: { fields: string[] }) =>
+        matchesIndex(fields, false)
+      ));
+
+  function matchesIndex(fields: string[], requireExactEqOrder: boolean) {
+    if (
+      eqValues.size !== eqFields.length ||
+      fields.length < eqFields.length + suffixFields.length
+    ) {
+      return false;
+    }
+    const eqPrefix = fields.slice(0, eqFields.length);
+    const eqFieldsMatch = requireExactEqOrder
+      ? eqPrefix.every((field, index) => field === eqFields[index])
+      : eqPrefix.every((field) => eqValues.has(field));
+    const suffixFieldsMatch = suffixFields.every(
+      (field, index) => field === fields[eqFields.length + index]
+    );
+    // If sorting by createdAt, no intermediate fields can be on the index
+    // as they may override the createdAt sort order.
+    const createdAtFieldMatch =
+      boundField === "createdAt" || sortField === "createdAt"
+        ? eqFields.length + suffixFields.length === fields.length
+        : true;
+    return eqFieldsMatch && suffixFieldsMatch && createdAtFieldMatch;
+  }
   if (!index) {
     return { indexFields };
   }
@@ -227,7 +270,9 @@ const findIndex = (
     boundField,
     sortField,
     values: {
-      eq: indexEqFields.map(([, value]) => value),
+      eq: index.fields
+        .slice(0, eqFields.length)
+        .map((field: string) => [field, eqValues.get(field)!] as const),
       lt: lowerBound?.operator === "lt" ? lowerBound.value : undefined,
       lte: lowerBound?.operator === "lte" ? lowerBound.value : undefined,
       gt: upperBound?.operator === "gt" ? upperBound.value : undefined,
@@ -246,31 +291,51 @@ export const checkUniqueFields = async <
   input: Record<string, any>,
   doc?: Record<string, any>
 ) => {
-  if (!hasUniqueFields(betterAuthSchema, table, input)) {
-    return;
-  }
-  for (const field of Object.keys(input)) {
-    if (!isUniqueField(betterAuthSchema, table, field)) {
+  const mergedDoc = { ...doc, ...input };
+  for (const constraint of getUniqueConstraints(betterAuthSchema, table)) {
+    if (
+      !constraint.some((field) => field in input) ||
+      !constraint.every((field) => mergedDoc[field] !== undefined)
+    ) {
       continue;
     }
-    const { index } =
-      findIndex(schema, {
-        model: table,
-        where: [
-          { field, operator: "eq", value: input[field as keyof typeof input] },
-        ],
-      }) || {};
+    const { index } = findIndex(schema, {
+      model: table,
+      where: constraint.map((field) => ({
+        field,
+        operator: "eq" as const,
+        value: mergedDoc[field],
+      })),
+    }) || { index: undefined };
     if (!index) {
-      throw new Error(`No index found for ${table}${field}`);
+      throw new Error(
+        `No index found for unique constraint ${table}.${constraint.join("+")}`
+      );
     }
-    const existingDoc = await ctx.db
+    const indexConstraintFields = index.fields.slice(0, constraint.length);
+    if (
+      indexConstraintFields.length !== constraint.length ||
+      !indexConstraintFields.every((field) => constraint.includes(field))
+    ) {
+      throw new Error(
+        `Index ${index.indexDescriptor} does not match unique constraint ${table}.${constraint.join("+")}`
+      );
+    }
+    const existingDocs = await ctx.db
       .query(table as any)
       .withIndex(index.indexDescriptor, (q) =>
-        q.eq(field, input[field as keyof typeof input])
+        indexConstraintFields.reduce(
+          (query: any, field: string) => query.eq(field, mergedDoc[field]),
+          q
+        )
       )
-      .unique();
-    if (existingDoc && existingDoc._id !== doc?._id) {
-      throw new Error(`${table} ${field} already exists`);
+      .take(2);
+    if (existingDocs.some((existingDoc) => existingDoc._id !== doc?._id)) {
+      const constraintName =
+        constraint.length === 1
+          ? constraint[0]
+          : `unique constraint ${constraint.join("+")}`;
+      throw new Error(`${table} ${constraintName} already exists`);
     }
   }
 };
@@ -343,7 +408,9 @@ const filterByWhere = <
       switch (w.operator) {
         case undefined:
         case "eq": {
-          return value === w.value;
+          // Convex omits unset optional fields; Better Auth's null guards must
+          // also match those fields (for example, unrevoked refresh tokens).
+          return w.value === null ? value == null : value === w.value;
         }
         case "in": {
           return Array.isArray(w.value) && (w.value as any[]).includes(value);
@@ -366,7 +433,7 @@ const filterByWhere = <
           return value === w.value || isGreaterThan(value, w.value);
         }
         case "ne": {
-          return value !== w.value;
+          return w.value === null ? value != null : value !== w.value;
         }
         case "contains": {
           return typeof value === "string" && value.includes(w.value as string);
@@ -409,8 +476,8 @@ const generateQuery = (
         usableIndex.indexDescriptor,
         hasValues
           ? (q: any) => {
-              for (const [idx, value] of (values?.eq ?? []).entries()) {
-                q = q.eq(usableIndex.fields[idx], value);
+              for (const [field, value] of values?.eq ?? []) {
+                q = q.eq(field, value);
               }
               if (values?.lt !== undefined) {
                 q = q.lt(boundField, values.lt);
@@ -518,9 +585,7 @@ export const paginate = async <
         where: [uniqueWhere],
       }) || {};
     if (uniqueWhere.field !== "_id" && !index) {
-      throw new Error(
-        `No index found for ${args.model}.${uniqueWhere.field}`
-      );
+      throw new Error(`No index found for ${args.model}.${uniqueWhere.field}`);
     }
     const doc =
       uniqueWhere.field === "_id"
@@ -530,7 +595,7 @@ export const paginate = async <
         : await ctx.db
             .query(args.model as any)
             .withIndex(index?.indexDescriptor as any, (q) =>
-              q.eq(index?.fields[0], uniqueWhere.value)
+              q.eq(uniqueWhere.field, uniqueWhere.value)
             )
             .unique();
 

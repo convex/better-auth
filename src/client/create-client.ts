@@ -20,6 +20,12 @@ import type defaultSchema from "../component/schema.js";
 import type { CreateAuth, GenericCtx } from "./index.js";
 import type { TrustedOriginsOption } from "../utils/index.js";
 
+const getOpenIdConfigPath = (plugins: unknown) =>
+  Array.isArray(plugins) &&
+  plugins.some((plugin) => plugin?.id === "oauth-provider")
+    ? "/.well-known/openid-configuration"
+    : "/convex/.well-known/openid-configuration";
+
 export type AuthFunctions = {
   onCreate?: FunctionReference<"mutation", "internal", { [key: string]: any }>;
   onUpdate?: FunctionReference<"mutation", "internal", { [key: string]: any }>;
@@ -65,6 +71,7 @@ type SlimComponentApi = {
     findOne: FunctionReference<"query", "internal">;
     findMany: FunctionReference<"query", "internal">;
     updateOne: FunctionReference<"mutation", "internal">;
+    incrementOne: FunctionReference<"mutation", "internal">;
     updateMany: FunctionReference<"mutation", "internal">;
     deleteOne: FunctionReference<"mutation", "internal">;
     deleteMany: FunctionReference<"mutation", "internal">;
@@ -140,10 +147,18 @@ const restoreOriginalForwardedHeaders = (
   ) {
     return request;
   }
-  const headers = new Headers(request.headers);
-  headers.set("x-forwarded-host", originalHost);
-  headers.set("x-forwarded-proto", originalProto);
-  return new Request(request, { headers });
+  // Better Auth 1.7 only honors x-forwarded-* when advanced.trustedProxyHeaders
+  // is set; rewriting the request URL and host header keeps the original
+  // trusted host and protocol visible on both the 1.6 and 1.7 code paths
+  // without trusting proxy headers from arbitrary clients.
+  const url = new URL(request.url);
+  url.host = originalHost;
+  url.protocol = `${originalProto}:`;
+  const restored = new Request(url, request);
+  restored.headers.set("host", originalHost);
+  restored.headers.set("x-forwarded-host", originalHost);
+  restored.headers.set("x-forwarded-proto", originalProto);
+  return restored;
 };
 
 /**
@@ -454,7 +469,7 @@ export const createClient = <
           path: "/.well-known/openid-configuration",
           method: "GET",
           handler: httpActionGeneric(async () => {
-            const url = `${process.env.CONVEX_SITE_URL}${path}/convex/.well-known/openid-configuration`;
+            const url = `${process.env.CONVEX_SITE_URL}${path}${getOpenIdConfigPath(staticAuth.options.plugins)}`;
             return Response.redirect(url);
           }),
         });
@@ -576,8 +591,9 @@ export const createClient = <
         http.route({
           path: "/.well-known/openid-configuration",
           method: "GET",
-          handler: httpActionGeneric(async () => {
-            const url = `${process.env.CONVEX_SITE_URL}${path}/convex/.well-known/openid-configuration`;
+          handler: httpActionGeneric(async (ctx) => {
+            const auth = createAuth(ctx as any);
+            const url = `${process.env.CONVEX_SITE_URL}${path}${getOpenIdConfigPath(auth.options.plugins)}`;
             return Response.redirect(url);
           }),
         });
