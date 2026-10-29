@@ -1,0 +1,34 @@
+---
+title: Migrations
+description: Upgrade guides for @convex-dev/better-auth
+---
+
+Each guide covers upgrading from the previous minor version. If you're more
+than one version behind, work through the guides in order, starting with the
+version after the one you're on.
+
+To check your current version:
+
+```npm
+npm ls @convex-dev/better-auth
+```
+
+## Guides
+
+<Cards>
+  <Card title="Migrate to 0.12" href="/migrations/migrate-to-0-12">
+    Better Auth 1.6, `baseURL` for client-side frameworks
+  </Card>
+  <Card title="Migrate to 0.11" href="/migrations/migrate-to-0-11">
+    Better Auth 1.5, passkey plugin removed, `oauthApplication` field rename
+  </Card>
+  <Card title="Migrate to 0.10" href="/migrations/migrate-to-0-10">
+    Better Auth 1.4, `customJwt` auth config, SSR improvements
+  </Card>
+  <Card title="Migrate to 0.9" href="/migrations/migrate-to-0-9">
+    `onUpdate` trigger signature change, `user.userId` deprecation
+  </Card>
+  <Card title="Migrate to 0.8" href="/migrations/migrate-to-0-8">
+    `createClient`, hooks to triggers, `ctx.auth.getUserIdentity()` changes
+  </Card>
+</Cards>
