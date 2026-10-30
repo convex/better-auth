@@ -1,0 +1,40 @@
+<div className="fd-step">
+
+### Update route handlers
+
+Update your route handlers to use the new handler.
+
+<Tabs groupId="framework" items={["next-js", "tanstack-start"]} defaultValue="next-js" persist>
+<Tab value="next-js">
+```ts title="app/api/auth/[...all]/route.ts"
+import { nextJsHandler } from "@convex-dev/better-auth/nextjs"; // [!code --]
+import { handler } from "@/lib/auth-server"; // [!code ++]
+
+export const { GET, POST } = nextJsHandler(); // [!code --]
+export const { GET, POST } = handler; // [!code ++]
+```
+</Tab>
+
+<Tab value="tanstack-start">
+```ts title="src/routes/api/auth/$.ts"
+import { createFileRoute } from '@tanstack/react-router'
+import { reactStartHandler } from '@convex-dev/better-auth/react-start' // [!code --]
+import { handler } from '~/lib/auth-server' // [!code ++]
+
+export const Route = createFileRoute('/api/auth/$')({
+  server: {
+    handlers: {
+      // [!code --:2]
+      GET: ({ request }) => reactStartHandler(request),
+      POST: ({ request }) => reactStartHandler(request),
+      // [!code ++:2]
+      GET: ({ request }) => handler(request),
+      POST: ({ request }) => handler(request),
+    },
+  },
+})
+```
+</Tab>
+</Tabs>
+
+</div>

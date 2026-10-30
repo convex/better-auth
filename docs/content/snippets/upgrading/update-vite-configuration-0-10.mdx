@@ -1,0 +1,17 @@
+<div className="fd-step">
+
+### Update Vite configuration
+
+Update Vite configuration to bundle `@convex-dev/better-auth` during SSR to
+avoid module resolution issues.
+
+```ts title="vite.config.ts"
+export default defineConfig({
+  // ...other config
+  ssr: {
+    noExternal: ["@convex-dev/better-auth"],
+  },
+});
+```
+
+</div>

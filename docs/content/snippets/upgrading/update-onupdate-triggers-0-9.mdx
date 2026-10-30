@@ -1,0 +1,23 @@
+<div className="fd-step">
+
+### Update `onUpdate` triggers
+
+Any triggers using the `onUpdate` hook should be updated to expect the new doc
+as the second parameter, and the old doc as the third parameter. The old doc
+parameter can be left out of the signature if not needed.
+
+```ts title="convex/auth.ts"
+export const authComponent = createClient<DataModel>(components.betterAuth, {
+  authFunctions,
+  triggers: {
+    user: {
+      onUpdate: async (ctx, oldDoc, newDoc) => { // [!code --]
+      onUpdate: async (ctx, newDoc, oldDoc) => { // [!code ++]
+        // oldDoc can be left out of the signature if not needed
+      },
+    },
+  },
+});
+```
+
+</div>

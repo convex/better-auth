@@ -1,0 +1,35 @@
+<div className="fd-step">
+
+### Split out `createAuthOptions` function
+
+The previous approach of configuring Better Auth options inside of the
+`betterAuth()` function call meant we had to run Better Auth to access options
+statically. This led to unnecessary logging and inaccurate error messages, and
+required workarounds like using `optionsOnly` to disable logging.
+
+To avoid all of this moving forward, you'll want to have a separate
+`createAuthOptions` function that just returns the typed options object.
+
+```ts title="convex/auth.ts"
+import {
+  betterAuth,
+  type BetterAuthOptions, // [!code ++]
+} from "better-auth/minimal";
+
+// [!code ++:5]
+export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
+  return {
+    // ... auth config
+  } satisfies BetterAuthOptions;
+};
+
+export const createAuth = (ctx: GenericCtx<DataModel>) => {
+  // [!code --:3]
+  return betterAuth({
+    // ... auth config
+  });
+  return betterAuth(createAuthOptions(ctx)); // [!code ++]
+};
+```
+
+</div>

@@ -11,45 +11,15 @@ const config = {
   reactStrictMode: true,
   redirects: async () => {
     return [
-      // Migration guides were consolidated into a single upgrade guide
+      // Migration guides were consolidated into the Upgrading section
       {
         source: "/migrations",
         destination: "/upgrading",
         permanent: true,
       },
       {
-        source: "/migrations/migrate-to-0-12",
+        source: "/migrations/:path*",
         destination: "/upgrading",
-        permanent: true,
-      },
-      {
-        source: "/migrations/migrate-to-0-11",
-        destination: "/upgrading",
-        permanent: true,
-      },
-      {
-        source: "/migrations/migrate-to-0-10",
-        destination: "/upgrading",
-        permanent: true,
-      },
-      {
-        source: "/migrations/migrate-to-0-9",
-        destination: "/upgrading",
-        permanent: true,
-      },
-      {
-        source: "/migrations/migrate-to-0-8",
-        destination: "/upgrading/migrate-to-0-8",
-        permanent: true,
-      },
-      {
-        source: "/migrations/migrate-to-0-9/migrate-userid",
-        destination: "/upgrading/migrate-userid",
-        permanent: true,
-      },
-      {
-        source: "/migrations/migrate-to-0-9/migrate-userid/:slug",
-        destination: "/upgrading/migrate-userid/:slug",
         permanent: true,
       },
       {

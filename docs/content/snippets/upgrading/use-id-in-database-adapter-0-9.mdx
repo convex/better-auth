@@ -1,0 +1,27 @@
+<div className="fd-step">
+
+### Use `_id` in database adapter
+
+Any adapter usage referencing the `id` field should be updated to use `_id`
+instead.
+
+<Callout type="warning">
+  Using the adapter directly is not unsafe, but it is not recommended. Results
+  are not typesafe, and breaking changes may occur.
+</Callout>
+
+```ts title="convex/auth.ts"
+export const getUserById = query({
+  args: { authId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+      model: "user",
+      where: [{ field: "id", value: args.authId }], // [!code --]
+      where: [{ field: "_id", value: args.authId }], // [!code ++]
+    });
+    return user;
+  },
+});
+```
+
+</div>
