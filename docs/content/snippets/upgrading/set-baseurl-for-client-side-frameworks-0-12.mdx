@@ -3,8 +3,8 @@
 ### Set `baseURL` for client-side frameworks
 
 If your app uses the cross-domain plugin (e.g., Vite SPA, Expo Web), add
-`baseURL` to your `betterAuth()` options. Without it, Better Auth 1.6 logs a
-"Base URL could not be determined" warning on every request.
+`baseURL` to your `betterAuth()` options so Better Auth doesn't have to infer it
+from each request.
 
 ```ts title="convex/auth.ts"
 betterAuth({
