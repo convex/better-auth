@@ -1,0 +1,77 @@
+---
+title: Migrate off user.userId
+description: Migrate away from tracking user.userId in the component user table
+---
+
+## tl;dr
+
+The Better Auth component has its own user table. Your app may have its own
+user table as well. These tables are related via the `userId` field in the
+Better Auth user table. The component facilitates this relationship as a special
+case, but that support has been deprecated since 0.9 and will be removed in a
+future release.
+
+This migration is optional and can be done at any time. It is not required to
+upgrade the component; `userId` remains an optional field in the component
+schema.
+
+### Why?
+
+Originally the component schema couldn't be configured. This is now possible
+through [Local Install](/features/local-install). Moving forward, keeping two
+user tables should be a project decision that is explicitly configured rather
+than a built in pattern that often brings confusion.
+
+### Do I need to do anything?
+
+If your app has its own user table and the `userId` field is populated in any
+of your Better Auth user table records, you will need to follow one of the
+migration guides below. Otherwise, you can ignore this guide.
+
+## Migration options
+
+<div className="fd-steps">
+
+<div className="fd-step">
+
+### Keep current behavior
+
+**If avoiding a data migration is the most important thing for you, this is the
+way to go.**
+
+If you want to maintain the current approach, you can configure Better Auth to
+do that. If you already use Local Install, want to keep using two user tables,
+and are fine with the app user id being tracked in the component user table,
+this will be the simplest approach.
+
+<Cards>
+  <Card title="Migration guide" href="/upgrading/migrate-userid/userid-in-component-table">
+    Migrate user id reference to component table
+  </Card>
+</Cards>
+
+</div>
+
+<div className="fd-step">
+
+### Track component user id in app table
+
+**If avoiding Local Install is the most important thing for you, this is the way
+to go.**
+
+This is the generally recommended approach for apps that will continue using two
+user tables. It doesn't require Local Install. This approach involves migrating
+from tracking the app user id in the component to tracking the component user id
+in the app user table via an `authId` field.
+
+A data migration is required to backfill the `authId` field.
+
+<Cards>
+  <Card title="Migration guide" href="/upgrading/migrate-userid/userid-in-app-table">
+    Migrate user id reference to app table
+  </Card>
+</Cards>
+
+</div>
+
+</div>

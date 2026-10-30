@@ -9,6 +9,6 @@
     "integrations",
     "experimental",
     "api",
-    "migrations"
+    "upgrading"
   ]
 }

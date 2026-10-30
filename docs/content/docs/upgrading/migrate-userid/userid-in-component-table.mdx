@@ -7,7 +7,7 @@ description:
 <Callout>
   This guide shows one of two recommended strategies for migrating away from
   maintaining a `user.userId` field in the Better Auth user table. Read [the
-  overview](./) for more information.
+  overview](/upgrading/migrate-userid) for more information.
 </Callout>
 
 <Callout type="warning">
@@ -40,7 +40,7 @@ npx convex dev
 ### Migrate to Local Install
 
 If you haven't already, follow the guide to migrate to
-[Local Install](/local-install).
+[Local Install](/features/local-install).
 
 </div>
 
@@ -52,11 +52,9 @@ Use Better Auth's
 option to add the `userId` field to the component schema.
 
 ```ts title="convex/auth.ts"
-export const createAuth = (
-  ctx: GenericCtx<DataModel>,
-  { optionsOnly } = { optionsOnly: false }
-) => {
-  return betterAuth({
+export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
+  return {
+    // ... other auth config
     // [!code ++:8]
     user: {
       additionalFields: {
@@ -66,7 +64,7 @@ export const createAuth = (
         },
       },
     },
-  });
+  } satisfies BetterAuthOptions;
 };
 ```
 
@@ -79,7 +77,8 @@ export const createAuth = (
 Regenerate the Better Auth schema to include the new `userId` field.
 
 ```npm
-cd convex/betterAuth && npx @better-auth/cli generate -y
+cd convex/betterAuth
+npx auth generate
 ```
 
 </div>
@@ -89,9 +88,14 @@ cd convex/betterAuth && npx @better-auth/cli generate -y
 ### Add `setUserId` mutation
 
 The component has a deprecated `setUserId` method, you'll want to create your
-own to replace it.
+own to replace it. Add it to a new file in your component directory, not to
+`convex/betterAuth/auth.ts`, which should only contain the static `auth` export
+used for schema generation.
 
-```ts title="convex/betterAuth/auth.ts"
+```ts title="convex/betterAuth/user.ts"
+import { mutation } from "./_generated/server";
+import { v } from "convex/values";
+
 export const setUserId = mutation({
   args: {
     authId: v.id("user"),
@@ -115,12 +119,12 @@ Update the user onCreate trigger to set the `userId` field on the Better Auth
 user.
 
 ```ts title="convex/auth.ts"
-export const authComponent = createClient<DataModel, typeof betterAuthSchema>(
+export const authComponent = createClient<DataModel, typeof authSchema>(
   components.betterAuth,
   {
     authFunctions,
     local: {
-      schema: betterAuthSchema,
+      schema: authSchema,
     },
     triggers: {
       user: {
@@ -130,14 +134,14 @@ export const authComponent = createClient<DataModel, typeof betterAuthSchema>(
           });
           await authComponent.setUserId(ctx, authUser._id, userId); // [!code --]
           // [!code ++:4]
-          await ctx.runMutation(components.betterAuth.auth.setUserId, {
+          await ctx.runMutation(components.betterAuth.user.setUserId, {
             authId: authUser._id,
             userId,
           });
         },
       },
     },
-  }
+  },
 );
 ```
 
