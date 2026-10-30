@@ -8,27 +8,11 @@ import {
 import { bearer as bearerPlugin } from "better-auth/plugins/bearer";
 import { jwt as jwtPlugin } from "better-auth/plugins/jwt";
 import type { JwtOptions, Jwk } from "better-auth/plugins/jwt";
-import { oidcProvider as oidcProviderPlugin } from "better-auth/plugins/oidc-provider";
 import { omit } from "convex-helpers";
 import type { AuthConfig, AuthProvider } from "convex/server";
 import { VERSION } from "../../version.js";
 
 export const JWT_COOKIE_NAME = "convex_jwt";
-
-type BetterAuthAfterHooks = NonNullable<
-  NonNullable<BetterAuthPlugin["hooks"]>["after"]
->;
-type BetterAuthAfterHook = BetterAuthAfterHooks[number];
-type BetterAuthHookContext = Parameters<BetterAuthAfterHook["matcher"]>[0];
-
-const normalizeAfterHooks = <THook extends BetterAuthAfterHook>(
-  hooks: THook[]
-): BetterAuthAfterHooks => {
-  return hooks.map((hook) => ({
-    ...hook,
-    matcher: (ctx: BetterAuthHookContext) => Boolean(hook.matcher(ctx)),
-  }));
-};
 
 const getJwksAlg = (authProvider: AuthProvider) => {
   const isCustomJwt =
@@ -176,15 +160,9 @@ export const convex = (opts: {
 }) => {
   const jwtExpirationSeconds =
     opts.jwt?.expirationSeconds ?? opts.jwtExpirationSeconds ?? 60 * 15;
-  const oidcProvider = oidcProviderPlugin({
-    loginPage: "/not-used",
-    metadata: {
-      issuer: `${process.env.CONVEX_SITE_URL}`,
-      jwks_uri: `${process.env.CONVEX_SITE_URL}${opts.options?.basePath ?? "/api/auth"}/convex/jwks`,
-    },
-    __skipDeprecationWarning: true,
-  });
   const providerConfig = parseAuthConfig(opts.authConfig, opts);
+  const issuer = `${process.env.CONVEX_SITE_URL}`;
+  const jwksUri = `${process.env.CONVEX_SITE_URL}${opts.options?.basePath ?? "/api/auth"}/convex/jwks`;
 
   const jwtOptions = {
     jwt: {
@@ -293,7 +271,7 @@ export const convex = (opts: {
               //skip
             };
             const knownSafePaths = ["/api-key/list", "/api-key/get"];
-            const noopWrite = (method: string) => {
+            const noopWrite = (method: string, result: 0 | null = 0) => {
               return async (..._args: any[]) => {
                 if (ctx.path && !knownSafePaths.includes(ctx.path)) {
                   // eslint-disable-next-line no-console
@@ -301,7 +279,7 @@ export const convex = (opts: {
                     `[convex-better-auth] Write operation "${method}" skipped in query context for ${ctx.path}`
                   );
                 }
-                return 0;
+                return result;
               };
             };
             ctx.context.adapter.create = noopWrite("create") as any;
@@ -309,19 +287,26 @@ export const convex = (opts: {
             ctx.context.adapter.updateMany = noopWrite("updateMany") as any;
             ctx.context.adapter.delete = noopWrite("delete") as any;
             ctx.context.adapter.deleteMany = noopWrite("deleteMany") as any;
+            // Better Auth 1.7 atomic methods; null means "no row matched".
+            ctx.context.adapter.consumeOne = noopWrite(
+              "consumeOne",
+              null
+            ) as any;
+            ctx.context.adapter.incrementOne = noopWrite(
+              "incrementOne",
+              null
+            ) as any;
             return { context: ctx };
           }),
         },
       ],
       after: [
-        ...normalizeAfterHooks(oidcProvider.hooks.after),
         {
           matcher: (ctx) => {
             return Boolean(
               ctx.path?.startsWith("/sign-in") ||
                 ctx.path?.startsWith("/sign-up") ||
                 ctx.path?.startsWith("/callback") ||
-                ctx.path?.startsWith("/oauth2/callback") ||
                 ctx.path?.startsWith("/magic-link/verify") ||
                 ctx.path?.startsWith("/email-otp/verify-email") ||
                 ctx.path?.startsWith("/phone-number/verify") ||
@@ -373,27 +358,70 @@ export const convex = (opts: {
         },
       ],
     },
+    // Endpoint keys are prefixed with "Convex" because Better Auth merges
+    // plugin endpoints by key: the jwt plugin's own `getToken`/`getJwks` and
+    // the oauth-provider plugin's `getOpenIdConfig` would otherwise shadow
+    // these when an app adds those plugins itself (#395). Client paths are
+    // derived from the endpoint path, so `authClient.convex.token()` is
+    // unchanged.
     endpoints: {
-      getOpenIdConfig: createAuthEndpoint(
+      getConvexOpenIdConfig: createAuthEndpoint(
         "/convex/.well-known/openid-configuration",
         {
           method: "GET",
           metadata: {
             isAction: false,
           },
-          // TODO: properly type this
         },
         async (ctx) => {
-          const response = await oidcProvider.endpoints.getOpenIdConfig({
-            ...ctx,
-            asResponse: false,
-            returnHeaders: false,
-            returnStatus: false,
+          // OpenID Connect discovery document for Convex's `domain`-style
+          // auth provider (and anything else that discovers the issuer).
+          // Convex only reads `issuer` and `jwks_uri`, but discovery clients
+          // require the standard metadata fields to be present, so the shape
+          // the oidcProvider plugin produced before Better Auth 1.7 is kept.
+          const baseURL = ctx.context.baseURL;
+          return ctx.json({
+            issuer,
+            authorization_endpoint: `${baseURL}/oauth2/authorize`,
+            token_endpoint: `${baseURL}/oauth2/token`,
+            userinfo_endpoint: `${baseURL}/oauth2/userinfo`,
+            jwks_uri: jwksUri,
+            registration_endpoint: `${baseURL}/oauth2/register`,
+            end_session_endpoint: `${baseURL}/oauth2/endsession`,
+            scopes_supported: ["openid", "profile", "email", "offline_access"],
+            response_types_supported: ["code"],
+            response_modes_supported: ["query"],
+            grant_types_supported: ["authorization_code", "refresh_token"],
+            acr_values_supported: [
+              "urn:mace:incommon:iap:silver",
+              "urn:mace:incommon:iap:bronze",
+            ],
+            subject_types_supported: ["public"],
+            id_token_signing_alg_values_supported: [
+              jwtOptions.jwks.keyPairConfig.alg,
+            ],
+            token_endpoint_auth_methods_supported: [
+              "client_secret_basic",
+              "client_secret_post",
+              "none",
+            ],
+            code_challenge_methods_supported: ["S256"],
+            claims_supported: [
+              "sub",
+              "iss",
+              "aud",
+              "exp",
+              "nbf",
+              "iat",
+              "jti",
+              "email",
+              "email_verified",
+              "name",
+            ],
           });
-          return response;
         }
       ),
-      getJwks: createAuthEndpoint(
+      getConvexJwks: createAuthEndpoint(
         "/convex/jwks",
         {
           method: "GET",
@@ -567,7 +595,7 @@ export const convex = (opts: {
           return jwks;
         }
       ),
-      getToken: createAuthEndpoint(
+      getConvexToken: createAuthEndpoint(
         "/convex/token",
         {
           method: "GET",

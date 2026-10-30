@@ -168,7 +168,9 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
       handler: async (ctx, args) => {
         const doc = await listOne(ctx, schema, betterAuthSchema, args.input);
         if (!doc) {
-          throw new Error(`Failed to update ${args.input.model}`);
+          // Better Auth's adapter contract: update returns null when the
+          // where clause matches nothing.
+          return null;
         }
         await checkUniqueFields(
           ctx,
@@ -363,6 +365,122 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
           count: page.length,
           ids: page.map((doc) => doc._id),
         };
+      },
+    }),
+    // Atomic single-row consume (Better Auth 1.7 `consumeOne`): read and
+    // delete at most one matching document in one transaction and return it,
+    // or null when nothing matched.
+    consumeOne: mutationGeneric({
+      args: {
+        input: v.union(
+          ...Object.keys(schema.tables).map((name: string) => {
+            const tableName = name as TableNames;
+            return v.object({
+              model: v.literal(tableName),
+              where: v.optional(v.array(whereValidator(schema, tableName))),
+            });
+          })
+        ),
+        onDeleteHandle: v.optional(v.string()),
+      },
+      handler: async (ctx, args) => {
+        const doc = await listOne(ctx, schema, betterAuthSchema, args.input);
+        if (!doc) {
+          return null;
+        }
+        await ctx.db.delete(args.input.model, doc._id as GenericId<TableNames>);
+        if (args.onDeleteHandle) {
+          await ctx.runMutation(
+            args.onDeleteHandle as FunctionHandle<"mutation">,
+            { model: args.input.model, doc }
+          );
+        }
+        return doc;
+      },
+    }),
+    // Atomic guarded counter mutation (Better Auth 1.7 `incrementOne`): the
+    // where clause is both selector and guard, `increment` adds deltas to
+    // numeric fields (treating a missing field as 0), and `set` assigns
+    // values, all in one transaction. Returns the updated document, or null
+    // when the guard matched nothing.
+    incrementOne: mutationGeneric({
+      args: {
+        input: v.union(
+          ...Object.entries(schema.tables).map(
+            ([name, table]: [string, Schema["tables"][string]]) => {
+              const tableName = name as TableNames;
+              const fields = partial(table.validator.fields);
+              return v.object({
+                model: v.literal(tableName),
+                where: v.optional(v.array(whereValidator(schema, tableName))),
+                increment: v.record(v.string(), v.number()),
+                set: v.optional(v.object(fields)),
+              });
+            }
+          )
+        ),
+        onUpdateHandle: v.optional(v.string()),
+      },
+      handler: async (ctx, args) => {
+        const doc = await listOne(ctx, schema, betterAuthSchema, args.input);
+        if (!doc) {
+          return null;
+        }
+        const update: Record<string, unknown> = { ...(args.input.set ?? {}) };
+        for (const [field, delta] of Object.entries(args.input.increment)) {
+          const current = (doc as Record<string, unknown>)[field];
+          if (
+            current !== undefined &&
+            current !== null &&
+            typeof current !== "number"
+          ) {
+            throw new Error(
+              `Cannot increment non-numeric field ${args.input.model}.${field}`
+            );
+          }
+          update[field] = ((current as number | null | undefined) ?? 0) + delta;
+        }
+        await checkUniqueFields(
+          ctx,
+          schema,
+          betterAuthSchema,
+          args.input.model,
+          update,
+          doc
+        );
+        await ctx.db.patch(
+          args.input.model,
+          doc._id as GenericId<TableNames>,
+          update as any
+        );
+        const updatedDoc = await ctx.db.get(
+          args.input.model,
+          doc._id as GenericId<TableNames>
+        );
+        if (!updatedDoc) {
+          throw new Error(`Failed to update ${args.input.model}`);
+        }
+        if (args.onUpdateHandle) {
+          await ctx.runMutation(
+            args.onUpdateHandle as FunctionHandle<"mutation">,
+            {
+              model: args.input.model,
+              newDoc: updatedDoc,
+              oldDoc: doc,
+            }
+          );
+          const innerUpdatedDoc = await ctx.db.get(
+            args.input.model,
+            doc._id as GenericId<TableNames>
+          );
+          if (!innerUpdatedDoc) {
+            throw new Error(
+              `Failed to update ${args.input.model} (deleted by onUpdate trigger?)`
+            );
+          }
+          return innerUpdatedDoc;
+        }
+        return updatedDoc;
       },
     }),
   };

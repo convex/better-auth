@@ -128,7 +128,6 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
               ctx.body &&
               !ctx.body.callbackURL &&
               (ctx.path?.startsWith("/sign-in/social") ||
-                ctx.path?.startsWith("/sign-in/oauth2") ||
                 ctx.path?.startsWith("/sign-in/magic-link") ||
                 ctx.path?.startsWith("/send-verification-email"))
             ) {
@@ -174,7 +173,6 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
           matcher: (ctx) => {
             return Boolean(
               (ctx.path?.startsWith("/callback") ||
-                ctx.path?.startsWith("/oauth2/callback") ||
                 ctx.path?.startsWith("/magic-link/verify")) &&
               !isExpoNative(ctx)
             );
