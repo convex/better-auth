@@ -1,0 +1,14 @@
+<div className="fd-step">
+
+### Convex plugin endpoint keys renamed
+
+Better Auth merges plugin endpoints by key, so the Convex plugin's `getToken`,
+`getJwks` and `getOpenIdConfig` endpoints could be shadowed when an app also
+added the `jwt` or `oauth-provider` plugin. They are now `getConvexToken`,
+`getConvexJwks` and `getConvexOpenIdConfig`. The HTTP paths (`/convex/token`,
+`/convex/jwks`, `/convex/.well-known/openid-configuration`) and
+`authClient.convex.token()` are unchanged. Only code that called
+`auth.api.getToken()` or `auth.api.getJwks()` on the server expecting the Convex
+endpoints needs to use the new names.
+
+</div>

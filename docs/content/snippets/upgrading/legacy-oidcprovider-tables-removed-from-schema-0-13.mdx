@@ -1,0 +1,31 @@
+<div className="fd-step">
+
+### Legacy `oidcProvider` tables are no longer in the component schema
+
+Better Auth 1.7 removed the `oidcProvider` plugin, which the Convex plugin
+previously used internally to serve its OpenID discovery document. The component
+now serves that document itself, and the three tables the plugin contributed to
+the component schema (`oauthApplication`, `oauthAccessToken` and `oauthConsent`)
+are no longer declared.
+
+**Nothing is deleted by upgrading.** Convex keeps a table and its documents when
+it stops being declared in a schema; the table is simply no longer validated.
+For most apps these tables are empty, since the component never wrote to them.
+Delete the three empty tables from the component in the
+[Convex dashboard](https://dashboard.convex.dev) to tidy up.
+
+If your app added the `oidcProvider` plugin itself and acted as an OpenID
+provider, your data is still there:
+
+- `oauthApplication` holds your registered clients, including client secrets and
+  redirect URLs. Export it from the dashboard before deleting anything. If you
+  move to Better Auth's
+  [`@better-auth/oauth-provider`](https://better-auth.com/docs/plugins/oauth-provider)
+  plugin, register those clients again as `oauthClient` records.
+- `oauthAccessToken` and `oauthConsent` hold issued tokens and consent grants.
+  The `@better-auth/oauth-provider` plugin reuses these two table names with
+  different fields, so if you adopt it, clear both tables **before** pushing the
+  new schema or the push fails validation. Tokens are reissued on the next
+  sign-in and consent is asked again.
+
+</div>

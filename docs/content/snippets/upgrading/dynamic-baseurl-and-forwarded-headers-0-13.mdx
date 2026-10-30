@@ -1,0 +1,16 @@
+<div className="fd-step">
+
+### Dynamic `baseURL` and forwarded headers
+
+Better Auth 1.7 stops reading `x-forwarded-host` and `x-forwarded-proto` unless
+`advanced.trustedProxyHeaders` is set. The component's framework handlers
+(Next.js, TanStack Start) keep working without that option: for an original host
+listed exactly in `trustedOrigins`, the component now sets the `host` header the
+auth request sees, which is what a dynamic `baseURL` with `allowedHosts`
+validates against.
+
+If you front `.convex.site` with your own proxy and rely on the headers it sets,
+enable `advanced.trustedProxyHeaders` in your Better Auth options as the Better
+Auth 1.7 upgrade guide describes. Apps with a static `baseURL` are not affected.
+
+</div>

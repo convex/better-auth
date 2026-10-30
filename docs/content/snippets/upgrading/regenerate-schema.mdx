@@ -1,0 +1,22 @@
+<div className="fd-step">
+
+### Regenerate schema
+
+Whenever updating Better Auth with Local Install, regenerate the schema. Better
+Auth 1.7 adds columns that Convex requires to be declared before they can be
+written: `failedVerificationCount` and `lockedUntil` on `twoFactor`, `alg` and
+`crv` on `jwks`, and for the organization plugin `memberCount` on `team` and
+`membershipKey` on `teamMember`.
+
+The Better Auth CLI is invoked as `npx auth generate` (the older
+`npx @better-auth/cli generate` command no longer applies).
+
+```npm
+cd convex/betterAuth
+npx auth generate
+```
+
+If you added the `oidcProvider` plugin to your options, remove it before
+generating; it no longer exists in Better Auth 1.7.
+
+</div>
