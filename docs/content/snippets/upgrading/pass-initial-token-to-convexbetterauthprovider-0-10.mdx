@@ -1,0 +1,79 @@
+<div className="fd-step">
+
+### Pass initial token to ConvexBetterAuthProvider
+
+Apps using Next.js or TanStack Start can pass an initial token to speed up
+client authentication.
+
+<Tabs groupId="framework" items={["next-js", "tanstack-start"]} defaultValue="next-js" persist>
+<Tab value="next-js">
+
+Update your `ConvexClientProvider` to accept an initial token.
+
+```tsx title="app/ConvexClientProvider.tsx"
+export function ConvexClientProvider({
+  children,
+  initialToken, // [!code ++]
+}: {
+  children: ReactNode;
+  initialToken?: string | null; // [!code ++]
+}) {
+  return (
+    <ConvexBetterAuthProvider
+      client={convex}
+      authClient={authClient}
+      initialToken={initialToken} // [!code ++]
+    >
+      {children}
+    </ConvexBetterAuthProvider>
+  );
+}
+```
+
+Then fetch the initial token on the server from your root layout and pass it to
+the `ConvexClientProvider`.
+
+```tsx title="app/layout.tsx"
+import { getToken } from "@/lib/auth-server"; // [!code ++]
+import { ConvexClientProvider } from "./ConvexClientProvider";
+import { PropsWithChildren } from "react";
+
+export default async function RootLayout({ children }: PropsWithChildren) {
+  const token = await getToken(); // [!code ++]
+  return (
+    <html>
+      <body>
+        {/* [!code --] */}
+        <ConvexClientProvider>
+        {/* [!code ++] */}
+        <ConvexClientProvider initialToken={token}>
+          {children}
+        </ConvexClientProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+</Tab>
+<Tab value="tanstack-start">
+```tsx title="src/routes/__root.tsx"
+function RootComponent() {
+  const context = useRouteContext({ from: Route.id })
+  return (
+    <ConvexBetterAuthProvider
+      client={context.convexQueryClient.convexClient}
+      authClient={authClient}
+      initialToken={context.token} // [!code ++]
+    >
+      <RootDocument>
+        <Outlet />
+      </RootDocument>
+    </ConvexBetterAuthProvider>
+  )
+}
+```
+</Tab>
+</Tabs>
+
+</div>

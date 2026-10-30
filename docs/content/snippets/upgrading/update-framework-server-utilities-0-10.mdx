@@ -1,0 +1,76 @@
+<div className="fd-step">
+
+### Update framework server utilities
+
+Server utilities are provided for TanStack Start and Next.js to provide the same
+kind of set-it-and-forget-it auth management that you get in the client, on the
+server.
+
+The configuration requires explicit URLs for Convex with runtime validation,
+which should reduce environment variable confusion.
+
+Replace usage of previous versions of these functions with the new ones, eg.,
+`preloadQuery` with `preloadAuthQuery`, `fetchQuery` with `fetchAuthQuery`, etc.
+Note that the new functions only accept a function reference and arguments, a
+third option with configuration such as a token is not accepted or required.
+
+<Tabs groupId="framework" items={["next-js", "tanstack-start"]} defaultValue="next-js" persist>
+<Tab value="next-js">
+
+```ts title="lib/auth-server.ts"
+import { createAuth } from "@/convex/auth"; // [!code --]
+import { getToken as getTokenNextjs } from "@convex-dev/better-auth/nextjs"; // [!code --]
+import { convexBetterAuthNextJs } from "@convex-dev/better-auth/nextjs"; // [!code ++]
+
+// [!code --:3]
+export const getToken = () => {
+  return getTokenNextjs(createAuth);
+};
+
+// [!code ++:12]
+export const {
+  handler,
+  preloadAuthQuery,
+  isAuthenticated,
+  getToken,
+  fetchAuthQuery,
+  fetchAuthMutation,
+  fetchAuthAction,
+} = convexBetterAuthNextJs({
+  convexUrl: process.env.NEXT_PUBLIC_CONVEX_URL!,
+  convexSiteUrl: process.env.NEXT_PUBLIC_CONVEX_SITE_URL!,
+});
+```
+
+</Tab>
+
+<Tab value="tanstack-start">
+
+```ts title="src/lib/auth-server.ts"
+// [!code --:3]
+import { createAuth } from "convex/auth";
+import { setupFetchClient } from "@convex-dev/better-auth/react-start";
+import { getCookie } from "@tanstack/react-start/server";
+import { convexBetterAuthReactStart } from "@convex-dev/better-auth/react-start"; // [!code ++]
+
+// [!code --:2]
+export const { fetchQuery, fetchMutation, fetchAction } =
+  await setupFetchClient(createAuth, getCookie);
+
+// [!code ++:10]
+export const {
+  handler,
+  getToken,
+  fetchAuthQuery,
+  fetchAuthMutation,
+  fetchAuthAction,
+} = convexBetterAuthReactStart({
+  convexUrl: process.env.VITE_CONVEX_URL!,
+  convexSiteUrl: process.env.VITE_CONVEX_SITE_URL!,
+});
+```
+
+</Tab>
+</Tabs>
+
+</div>

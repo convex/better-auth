@@ -1,0 +1,60 @@
+<div className="fd-step">
+
+### Update root route
+
+Update the root route to use the new `getAuth()` server function and
+`isAuthenticated` context value.
+
+```tsx title="src/routes/__root.tsx"
+import { createServerFn } from "@tanstack/react-start";
+// [!code --:4]
+import {
+  fetchSession,
+  getCookieName,
+} from "@convex-dev/better-auth/react-start";
+import { getCookie, getRequest } from "@tanstack/react-start/server"; // [!code --]
+import { getToken } from "@/lib/auth-server"; // [!code ++]
+
+// [!code --:10]
+const fetchAuth = createServerFn({ method: "GET" }).handler(async () => {
+  const { createAuth } = await import("@convex/auth");
+  const { session } = await fetchSession(getRequest());
+  const sessionCookieName = getCookieName(createAuth);
+  const token = getCookie(sessionCookieName);
+  return {
+    userId: session?.user.id,
+    token,
+  };
+});
+
+// [!code ++:3]
+const getAuth = createServerFn({ method: "GET" }).handler(async () => {
+  return await getToken();
+});
+
+export const Route = createRootRouteWithContext<{
+  queryClient: QueryClient;
+  convexQueryClient: ConvexQueryClient;
+}>()({
+  // ... other config
+  beforeLoad: async (ctx) => {
+    const token = await getAuth();
+
+    // all queries, mutations and actions through TanStack Query will be
+    // authenticated during SSR if we have a valid token
+    if (token) {
+      // During SSR only (the only time serverHttpClient exists),
+      // set the auth token to make HTTP queries with.
+      ctx.context.convexQueryClient.serverHttpClient?.setAuth(token);
+    }
+
+    return {
+      isAuthenticated: !!token,
+      token,
+    };
+  },
+  component: RootComponent,
+});
+```
+
+</div>

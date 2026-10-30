@@ -1,0 +1,34 @@
+<div className="fd-step">
+
+### Update Convex Better Auth plugin config
+
+The Convex Better Auth plugin requires the auth config object. This helps
+minimize configuration and ensure accuracy.
+
+The new configuration uses RS256 instead of EdDSA (for compatibility with
+`customJwt`), so existing signing keys won't match. Set
+`jwksRotateOnTokenGenerationError` to `true` so keys are rotated when the
+algorithm mismatch occurs. This can be removed once keys have been rotated.
+
+```ts title="convex/auth.ts"
+import authConfig from "./auth.config";
+
+export const createAuth = (ctx: GenericCtx<DataModel>) => {
+  return betterAuth({
+    baseURL: siteUrl,
+    database: authComponent.adapter(ctx),
+    // ... other auth config
+    plugins: [
+      // ... other plugins
+      convex(), // [!code --]
+      // [!code ++:4]
+      convex({
+        authConfig,
+        jwksRotateOnTokenGenerationError: true,
+      }),
+    ],
+  });
+};
+```
+
+</div>

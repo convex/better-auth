@@ -1,4 +1,0 @@
-{
-  "title": "Migrate off user.userId",
-  "pages": ["userid-in-app-table", "userid-in-component-table"]
-}

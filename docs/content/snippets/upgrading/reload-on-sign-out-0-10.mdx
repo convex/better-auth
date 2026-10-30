@@ -1,0 +1,23 @@
+<div className="fd-step">
+
+### Reload on sign out
+
+Finally, update your signOut function(s) to reload the page. This allows
+`expectAuth` to work correctly for the next sign in. For apps with authenticated
+routes, signing out can typically replace a redirect.
+
+```ts title="src/lib/auth-client.ts"
+export const handleSignOut = async () => {
+  const navigate = useNavigate();
+  await authClient.signOut({
+    fetchOptions: {
+      onSuccess: () => {
+        navigate({ to: "/" }); // [!code --]
+        location.reload(); // [!code ++]
+      },
+    },
+  });
+};
+```
+
+</div>

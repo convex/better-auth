@@ -1,0 +1,21 @@
+<div className="fd-step">
+
+### Use `usePreloadedAuthQuery`
+
+`usePreloadedAuthQuery` replaces `usePreloadedQuery` as a drop-in - it ensures
+server rendered data is rendered until authentication is ready.
+
+```tsx title="app/(auth)/(dashboard)/todo-list.tsx"
+import { usePreloadedAuthQuery } from "@convex-dev/better-auth/nextjs/client";
+
+export const TodoList = ({ preloadedUserQuery }) => {
+  const userQuery = usePreloadedAuthQuery(preloadedUserQuery);
+  return (
+    <div>
+      <h1>{userQuery?.name}</h1>
+    </div>
+  );
+};
+```
+
+</div>
