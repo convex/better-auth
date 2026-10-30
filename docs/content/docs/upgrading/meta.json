@@ -1,0 +1,5 @@
+{
+  "title": "Upgrading",
+  "pages": ["migrate-userid", "migrate-to-0-8"],
+  "defaultOpen": true
+}

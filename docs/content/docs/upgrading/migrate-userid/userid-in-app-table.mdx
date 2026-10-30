@@ -6,7 +6,7 @@ description: Migrate user id reference from component to app table
 <Callout>
   This guide shows one of two recommended strategies for migrating away from
   maintaining a `user.userId` field in the Better Auth user table. Read [the
-  overview](./) for more information.
+  overview](/upgrading/migrate-userid) for more information.
 </Callout>
 
 <Callout type="warning">
@@ -19,6 +19,12 @@ description: Migrate user id reference from component to app table
 
 This guide is for migrating from tracking the app user id in the component to
 tracking the component user id in the app user table via an `authId` field.
+
+The migration reads and writes the Better Auth user table through the
+component's adapter functions, which work the same with or without
+[Local Install](/features/local-install). Calling the adapter functions directly
+bypasses [triggers](/features/triggers), so your user triggers won't run during
+the migration.
 
 <div className="fd-steps">
 
@@ -93,7 +99,6 @@ them in later steps.
 import { Migrations } from "@convex-dev/migrations";
 import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
-import { authComponent } from "./auth";
 
 export const migrations = new Migrations<DataModel>(components.migrations);
 
@@ -101,10 +106,16 @@ export const migrations = new Migrations<DataModel>(components.migrations);
 export const migrationAddAuthId = migrations.define({
   table: "users",
   migrateOne: async (ctx, user) => {
-    // For each user in the app users table, get the related Better Auth user id
-    // and set it to the `authId` field.
+    // For each user in the app users table, find the Better Auth user that
+    // references it and set its id to the `authId` field.
     if (user.authId === undefined) {
-      const authUser = await authComponent.migrationGetUser(ctx, user._id);
+      const authUser = await ctx.runQuery(
+        components.betterAuth.adapter.findOne,
+        {
+          model: "user",
+          where: [{ field: "userId", value: user._id }],
+        },
+      );
       if (!authUser) {
         throw new Error(`Auth user not found for id ${user._id}`);
       }
@@ -116,41 +127,26 @@ export const migrationAddAuthId = migrations.define({
 export const migrationRemoveUserId = migrations.define({
   table: "users",
   migrateOne: async (ctx, user) => {
-    // For each user in the app users table, remove the `userId` value from the
-    // related Better Auth user
-    await authComponent.migrationRemoveUserId(ctx, user._id);
+    // For each user in the app users table, clear the `userId` value on the
+    // related Better Auth user. The component schema allows `null` here.
+    await ctx.runMutation(components.betterAuth.adapter.updateOne, {
+      input: {
+        model: "user",
+        where: [{ field: "_id", value: user.authId }],
+        update: { userId: null },
+      },
+    });
   },
 });
 
 // Export runnable migration functions
 export const addAuthId = migrations.runner(
-  internal.migrations.migrationAddAuthId
+  internal.migrations.migrationAddAuthId,
 );
 
 export const removeUserId = migrations.runner(
-  internal.migrations.migrationRemoveUserId
+  internal.migrations.migrationRemoveUserId,
 );
-```
-
-  </div>
-
-  <div className="fd-step">
-### Update adapter exports (Local Install only)
-
-If using [Local Install](/local-install), update the adapter exports to include
-the `migrationRemoveUserId` function.
-
-```ts title="convex/betterAuth/adapter.ts"
-export const {
-  create,
-  findOne,
-  findMany,
-  updateOne,
-  updateMany,
-  deleteOne,
-  deleteMany,
-  migrationRemoveUserId, // [!code ++]
-} = createApi(schema, createAuth);
 ```
 
   </div>
@@ -165,54 +161,51 @@ Depending on how you're using Better Auth, you may or may not be using all of
 these triggers.
 
 ```ts title="convex/auth.ts"
-export const authComponent = createClient<DataModel, typeof betterAuthSchema>(
-  components.betterAuth,
-  {
-    authFunctions,
-    triggers: {
-      user: {
-        onCreate: async (ctx, authUser) => {
-          const userId = await ctx.db.insert("users", {
-            email: authUser.email,
-            authId: authUser._id, // [!code ++]
-          });
-          await authComponent.setUserId(ctx, authUser._id, userId);
-        },
+export const authComponent = createClient<DataModel>(components.betterAuth, {
+  authFunctions,
+  triggers: {
+    user: {
+      onCreate: async (ctx, authUser) => {
+        const userId = await ctx.db.insert("users", {
+          email: authUser.email,
+          authId: authUser._id, // [!code ++]
+        });
+        await authComponent.setUserId(ctx, authUser._id, userId);
+      },
       onUpdate: async (ctx, authUser, prevAuthUser) => {
         // Example trigger logic for syncing email address, your logic
         // and details may differ
         if (authUser.email !== prevAuthUser.email) {
-          // [!code ++:6]
-          const user = await ctx.db.query("users")
+          // [!code ++:7]
+          const user = await ctx.db
+            .query("users")
             .withIndex("authId", (q) => q.eq("authId", authUser._id))
             .unique();
           if (!user) {
-            throw new ConvexError('User not found')
+            throw new ConvexError("User not found");
           }
-          await ctx.db.patch(authUser.authId as Id<'users'>, { // [!code --]
+          await ctx.db.patch(authUser.userId as Id<"users">, { // [!code --]
           await ctx.db.patch(user._id, { // [!code ++]
             email: authUser.email,
-          })
+          });
         }
       },
       onDelete: async (ctx, authUser) => {
         // Example logic, your logic and details may differ
-        await ctx.db.delete(authUser.userId as Id<'users'>) // [!code --]
-        // [!code ++:6]
-        const user = await ctx.db.query("users")
+        // [!code ++:7]
+        const user = await ctx.db
+          .query("users")
           .withIndex("authId", (q) => q.eq("authId", authUser._id))
           .unique();
         if (!user) {
-          throw new ConvexError('User not found')
+          throw new ConvexError("User not found");
         }
-        await ctx.db.delete(authUser.userId as Id<'users'>) // [!code --]
-        await ctx.db.delete(user._id) // [!code ++]
-      },
-        // ...
+        await ctx.db.delete(authUser.userId as Id<"users">); // [!code --]
+        await ctx.db.delete(user._id); // [!code ++]
       },
     },
-  }
-);
+  },
+});
 ```
 
 </div>
@@ -279,7 +272,9 @@ export default defineSchema({
     email: v.string(),
     authId: v.optional(v.string()), // [!code --]
     authId: v.string(), // [!code ++]
-  }).index("email", ["email"]),
+  })
+    .index("email", ["email"])
+    .index("authId", ["authId"]),
 });
 ```
 
@@ -297,7 +292,8 @@ export const authComponent = createClient<DataModel>(components.betterAuth, {
   triggers: {
     user: {
       onCreate: async (ctx, authUser) => {
-        await ctx.db.insert("users", {
+        const userId = await ctx.db.insert("users", { // [!code --]
+        await ctx.db.insert("users", { // [!code ++]
           email: authUser.email,
           authId: authUser._id,
         });
@@ -401,64 +397,7 @@ app.use(migrations); // [!code --]
 export default app;
 ```
 
-```ts title="convex/migrations.ts"
-// [!code --:40]
-import { Migrations } from "@convex-dev/migrations";
-import { components, internal } from "./_generated/api";
-import type { DataModel } from "./_generated/dataModel";
-import { authComponent } from "./auth";
-
-export const migrations = new Migrations<DataModel>(components.migrations);
-
-// Define migration functions
-export const migrationAddAuthId = migrations.define({
-  table: "users",
-  migrateOne: async (ctx, user) => {
-    // For each user in the app users table, get the related Better Auth user id
-    // and set it to the `authId` field.
-    if (user.authId === undefined) {
-      const authUser = await authComponent.migrationGetUser(ctx, user._id);
-      if (!authUser) {
-        throw new Error(`Auth user not found for id ${user._id}`);
-      }
-      await ctx.db.patch(user._id, { authId: authUser._id });
-    }
-  },
-});
-
-export const migrationRemoveUserId = migrations.define({
-  table: "users",
-  migrateOne: async (ctx, user) => {
-    // For each user in the app users table, remove the `userId` value from the
-    // related Better Auth user
-    await authComponent.migrationRemoveUserId(ctx, user._id);
-  },
-});
-
-// Export runnable migration functions
-export const addAuthId = migrations.runner(
-  internal.migrations.migrationAddAuthId
-);
-
-export const removeUserId = migrations.runner(
-  internal.migrations.migrationRemoveUserId
-);
-```
-
-<Callout>This file only exists if using Local Install.</Callout>
-
-```ts title="convex/betterAuth/adapter.ts"
-export const {
-  create,
-  findOne,
-  findMany,
-  updateOne,
-  updateMany,
-  deleteOne,
-  deleteMany,
-  migrationRemoveUserId, // [!code --]
-} = createApi(schema, createAuth);
-```
+Delete `convex/migrations.ts`.
 
 </div>
 
