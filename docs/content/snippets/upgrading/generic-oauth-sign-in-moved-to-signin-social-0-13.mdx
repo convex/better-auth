@@ -1,0 +1,26 @@
+<div className="fd-step">
+
+### Generic OAuth sign-in moved to `signIn.social`
+
+Better Auth 1.7 removed the `genericOAuthClient()` client plugin and
+`authClient.signIn.oauth2()`. Generic OAuth providers now sign in through the
+standard social sign-in path, using the `providerId` from your `genericOAuth()`
+config as the `provider`.
+
+```ts title="auth-client.ts"
+import { genericOAuthClient } from "better-auth/client/plugins"; // [!code --]
+
+export const authClient = createAuthClient({
+  plugins: [
+    genericOAuthClient(), // [!code --]
+    convexClient(),
+  ],
+});
+```
+
+```ts
+await authClient.signIn.oauth2({ providerId: "slack" }); // [!code --]
+await authClient.signIn.social({ provider: "slack" }); // [!code ++]
+```
+
+</div>

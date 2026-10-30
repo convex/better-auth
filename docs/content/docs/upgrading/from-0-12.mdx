@@ -1,0 +1,68 @@
+---
+title: Upgrading from 0.12
+description: Upgrade @convex-dev/better-auth from 0.12 to the latest version
+---
+
+Everything needed to upgrade `@convex-dev/better-auth` from 0.12 to the current
+version. Work through the steps in order and deploy once.
+
+## Dependencies
+
+<div className="fd-steps">
+
+<include>../../snippets/upgrading/install-dependencies.mdx</include>
+
+</div>
+
+## Auth config
+
+<div className="fd-steps">
+
+<include>
+  ../../snippets/upgrading/dynamic-baseurl-and-forwarded-headers-0-13.mdx
+</include>
+
+</div>
+
+## Client
+
+<div className="fd-steps">
+
+<include>
+  ../../snippets/upgrading/generic-oauth-sign-in-moved-to-signin-social-0-13.mdx
+</include>
+
+<include>
+  ../../snippets/upgrading/twofactor-enable-returns-a-discriminated-union-0-13.mdx
+</include>
+
+</div>
+
+## Convex plugin
+
+<div className="fd-steps">
+
+<include>
+  ../../snippets/upgrading/convex-plugin-endpoint-keys-renamed-0-13.mdx
+</include>
+
+<include>
+  ../../snippets/upgrading/legacy-oidcprovider-tables-removed-from-schema-0-13.mdx
+</include>
+
+</div>
+
+## Local Install
+
+The following steps are only necessary for apps using
+[Local Install](/features/local-install).
+
+<div className="fd-steps">
+
+<include>
+  ../../snippets/upgrading/export-new-adapter-functions-0-13.mdx
+</include>
+
+<include>../../snippets/upgrading/regenerate-schema.mdx</include>
+
+</div>

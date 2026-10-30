@@ -14,7 +14,7 @@
 - breaking: the Convex plugin serves its OpenID discovery document directly; the
   removed `oidcProvider` plugin's `oauthApplication`, `oauthAccessToken` and
   `oauthConsent` tables are no longer in the component schema (data is kept, see
-  the 0.13 migration guide)
+  the Upgrading guide)
 - breaking: Convex plugin endpoint keys renamed to `getConvexToken`,
   `getConvexJwks` and `getConvexOpenIdConfig` to avoid being shadowed by the
   `jwt` and `oauth-provider` plugins (#395); HTTP paths are unchanged
