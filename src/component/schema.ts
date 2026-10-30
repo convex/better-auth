@@ -78,53 +78,17 @@ export const tables = {
     backupCodes: v.string(),
     userId: v.string(),
     verified: v.optional(v.union(v.null(), v.boolean())),
+    failedVerificationCount: v.optional(v.union(v.null(), v.number())),
+    lockedUntil: v.optional(v.union(v.null(), v.number())),
   })
-    .index("userId", ["userId"]),
-  oauthApplication: defineTable({
-    name: v.optional(v.union(v.null(), v.string())),
-    icon: v.optional(v.union(v.null(), v.string())),
-    metadata: v.optional(v.union(v.null(), v.string())),
-    clientId: v.optional(v.union(v.null(), v.string())),
-    clientSecret: v.optional(v.union(v.null(), v.string())),
-    redirectUrls: v.optional(v.union(v.null(), v.string())),
-    type: v.optional(v.union(v.null(), v.string())),
-    disabled: v.optional(v.union(v.null(), v.boolean())),
-    userId: v.optional(v.union(v.null(), v.string())),
-    createdAt: v.optional(v.union(v.null(), v.number())),
-    updatedAt: v.optional(v.union(v.null(), v.number())),
-  })
-    .index("clientId", ["clientId"])
-    .index("userId", ["userId"]),
-  oauthAccessToken: defineTable({
-    accessToken: v.optional(v.union(v.null(), v.string())),
-    refreshToken: v.optional(v.union(v.null(), v.string())),
-    accessTokenExpiresAt: v.optional(v.union(v.null(), v.number())),
-    refreshTokenExpiresAt: v.optional(v.union(v.null(), v.number())),
-    clientId: v.optional(v.union(v.null(), v.string())),
-    userId: v.optional(v.union(v.null(), v.string())),
-    scopes: v.optional(v.union(v.null(), v.string())),
-    createdAt: v.optional(v.union(v.null(), v.number())),
-    updatedAt: v.optional(v.union(v.null(), v.number())),
-  })
-    .index("accessToken", ["accessToken"])
-    .index("refreshToken", ["refreshToken"])
-    .index("clientId", ["clientId"])
-    .index("userId", ["userId"]),
-  oauthConsent: defineTable({
-    clientId: v.optional(v.union(v.null(), v.string())),
-    userId: v.optional(v.union(v.null(), v.string())),
-    scopes: v.optional(v.union(v.null(), v.string())),
-    createdAt: v.optional(v.union(v.null(), v.number())),
-    updatedAt: v.optional(v.union(v.null(), v.number())),
-    consentGiven: v.optional(v.union(v.null(), v.boolean())),
-  })
-    .index("clientId_userId", ["clientId","userId"])
     .index("userId", ["userId"]),
   jwks: defineTable({
     publicKey: v.string(),
     privateKey: v.string(),
     createdAt: v.number(),
     expiresAt: v.optional(v.union(v.null(), v.number())),
+    alg: v.optional(v.union(v.null(), v.string())),
+    crv: v.optional(v.union(v.null(), v.string())),
   }),
   rateLimit: defineTable({
     key: v.string(),

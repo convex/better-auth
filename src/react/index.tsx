@@ -8,34 +8,51 @@ import {
   useQuery,
 } from "convex/react";
 import type { FunctionReference } from "convex/server";
-import type { BetterAuthClientPlugin } from "better-auth";
-import type { createAuthClient } from "better-auth/react";
-import type {
-  convexClient,
-  crossDomainClient,
-} from "../client/plugins/index.js";
 import type { EmptyObject } from "convex-helpers";
 
-type CrossDomainClient = ReturnType<typeof crossDomainClient>;
-type ConvexClient = ReturnType<typeof convexClient>;
-type PluginsWithCrossDomain = (
-  | CrossDomainClient
-  | ConvexClient
-  | BetterAuthClientPlugin
-)[];
-type PluginsWithoutCrossDomain = (ConvexClient | BetterAuthClientPlugin)[];
-type AuthClientWithPlugins<
-  Plugins extends PluginsWithCrossDomain | PluginsWithoutCrossDomain,
-> = ReturnType<
-  typeof createAuthClient<
-    BetterAuthClientPlugin & {
-      plugins: Plugins;
-    }
-  >
->;
-export type AuthClient =
-  | AuthClientWithPlugins<PluginsWithCrossDomain>
-  | AuthClientWithPlugins<PluginsWithoutCrossDomain>;
+// Better Auth client calls resolve to a better-fetch result (`{ data, error }`)
+// or, with `fetchOptions.throw`, to the bare payload. The component narrows
+// the result itself, so client method types here only fix the arguments.
+type FetchResult<T> = {
+  data?: T | null;
+  error?: unknown;
+};
+
+/**
+ * The parts of a Better Auth client created with the `convexClient()` plugin
+ * that this package uses. Any `createAuthClient()` result that includes
+ * `convexClient()` satisfies it.
+ *
+ * This is described structurally rather than derived from `createAuthClient`
+ * over a plugin union: Better Auth 1.7's endpoint inference collapses to
+ * `never` for a union that includes the base `BetterAuthClientPlugin`, which
+ * made no real client assignable to the previous type.
+ */
+export type AuthClient = {
+  useSession: () => {
+    data: {
+      session?: { id?: string; token?: string } | null;
+      user?: unknown;
+    } | null;
+    isPending: boolean;
+  };
+  getSession: (...args: any[]) => Promise<unknown>;
+  convex: {
+    token: (...args: any[]) => Promise<any>;
+  };
+};
+
+/**
+ * An {@link AuthClient} that also includes the `crossDomainClient()` plugin.
+ */
+export type AuthClientWithCrossDomain = AuthClient & {
+  crossDomain: {
+    oneTimeToken: {
+      verify: (...args: any[]) => Promise<any>;
+    };
+  };
+  updateSession: () => void;
+};
 
 // Until we can import from our own entry points (requires TypeScript 4.7),
 // just describe the interface enough to help users pass the right type.
@@ -71,10 +88,10 @@ export function ConvexBetterAuthProvider({
       const token = url.searchParams.get("ott");
       if (token) {
         const authClientWithCrossDomain =
-          authClient as AuthClientWithPlugins<PluginsWithCrossDomain>;
+          authClient as AuthClientWithCrossDomain;
         url.searchParams.delete("ott");
         window.history.replaceState({}, "", url);
-        const result =
+        const result: FetchResult<{ session?: { token: string } | null }> =
           await authClientWithCrossDomain.crossDomain.oneTimeToken.verify({
             token,
           });
@@ -138,7 +155,7 @@ function useUseAuthFromBetterAuth(
             }
             pendingTokenRef.current = authClient.convex
               .token({ fetchOptions: { throw: false } })
-              .then(({ data }) => {
+              .then(({ data }: FetchResult<{ token?: string | null }>) => {
                 const token = data?.token || null;
                 setCachedToken(token);
                 return token;

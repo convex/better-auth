@@ -53,7 +53,9 @@ export default function EnableTwoFactor() {
       const { data } = await authClient.twoFactor.enable({
         password,
       });
-      if (data?.totpURI) {
+      // Better Auth 1.7 returns a discriminated union: TOTP details only
+      // when method is "totp".
+      if (data?.method === "totp") {
         setTotpUri(data.totpURI);
         if (data.backupCodes) {
           setBackupCodes(data.backupCodes);
