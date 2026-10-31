@@ -11,9 +11,9 @@ npx convex dev
 
 ## Testing
 
-Tests require Node 24 or newer (see `.nvmrc`). The upstream Better Auth
-adapter suite cannot load on older versions and fails loudly instead of
-skipping, so a green run on an older Node is not possible.
+Tests require Node 24 or newer (see `.nvmrc`). The upstream Better Auth adapter
+suite cannot load on older versions and fails loudly instead of skipping, so a
+green run on an older Node is not possible.
 
 ```sh
 rm -rf dist/ && npm run build
