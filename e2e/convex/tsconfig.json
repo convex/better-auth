@@ -13,6 +13,12 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["./**/*"],
+  "include": [
+    "./**/*",
+    "../audit/**/*.ts",
+    "../oauth-provider/**/*.ts",
+    "../browser-surfaces/**/*.ts",
+    "../adapter/**/*.ts"
+  ],
   "exclude": ["./_generated"]
 }

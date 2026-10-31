@@ -16,16 +16,20 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
   ({
     emailAndPassword: { enabled: true },
     baseURL: process.env.CONVEX_SITE_URL,
+    basePath: process.env.AUDIT_AUTH_BASE_PATH ?? "/api/auth",
     database: authComponent.adapter(ctx),
     plugins: [
       jwt({
         disableSettingJwtHeader: true,
         jwks: {
-          remoteUrl: `${process.env.CONVEX_SITE_URL}/api/auth/convex/jwks`,
+          remoteUrl: `${process.env.CONVEX_SITE_URL}${process.env.AUDIT_AUTH_BASE_PATH ?? "/api/auth"}/convex/jwks`,
           keyPairConfig: { alg: "RS256" },
         },
       }),
-      convex({ authConfig }),
+      convex({
+        authConfig,
+        options: { basePath: process.env.AUDIT_AUTH_BASE_PATH ?? "/api/auth" },
+      }),
       oauthProvider({
         loginPage: "/sign-in",
         consentPage: "/consent",
@@ -38,3 +42,22 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
 
 export const createAuth = (ctx: GenericCtx<DataModel>) =>
   betterAuth(createAuthOptions(ctx));
+
+const eddsaComponent = createClient<DataModel>(components.audit);
+export const createEdDsaAuth = (ctx: GenericCtx<DataModel>) =>
+  betterAuth({
+    baseURL: process.env.CONVEX_SITE_URL,
+    basePath: "/eddsa-auth",
+    database: eddsaComponent.adapter(ctx),
+    emailAndPassword: { enabled: true },
+    plugins: [
+      convex({
+        authConfig: {
+          providers: [
+            { domain: process.env.CONVEX_SITE_URL!, applicationID: "convex" },
+          ],
+        },
+        options: { basePath: "/eddsa-auth" },
+      }),
+    ],
+  });

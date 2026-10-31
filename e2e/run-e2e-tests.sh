@@ -29,10 +29,8 @@ echo "Running Playwright tests..."
 npx playwright test --config "$SCRIPT_DIR/playwright.config.ts"
 
 pushd "$SCRIPT_DIR" > /dev/null
-for registration in eager lazy; do
-  echo "Running OAuth provider tests ($registration)..."
-  npx convex env set OAUTH_ROUTE_REGISTRATION "$registration" --url "$CONVEX_URL" --admin-key "$ADMIN_KEY"
-  npx convex deploy --url "$CONVEX_URL" --admin-key "$ADMIN_KEY" -y
-  OAUTH_ROUTE_REGISTRATION="$registration" npx playwright test --config "$SCRIPT_DIR/playwright.oauth.config.ts"
-done
+bash "$SCRIPT_DIR/run-http-tests.sh"
+
+echo "Running schema generation regression tests..."
+node "$SCRIPT_DIR/schema-generation/collision.mjs"
 popd > /dev/null
