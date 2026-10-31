@@ -323,6 +323,14 @@ export const convexCustomTestSuite = createTestSuite(
         });
         expect(rows).toHaveLength(205);
         expect(new Set(rows.map((row) => row.id)).size).toBe(205);
+        // A limit above the match count must not be filled with duplicates.
+        const limited = await adapter.findMany<{ id: string }>({
+          model: "user",
+          where,
+          limit: 300,
+        });
+        expect(new Set(limited.map((row) => row.id)).size).toBe(205);
+        expect(limited).toHaveLength(205);
         expect(
           await adapter.updateMany({
             model: "user",

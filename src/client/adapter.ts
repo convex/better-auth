@@ -346,7 +346,10 @@ export const convexAdapter = <
             },
             { limit: data.limit }
           );
-          return result.docs;
+          // Pages should never overlap, but a duplicate here would be
+          // returned to the caller (and consume its limit), so dedupe as the
+          // OR path does.
+          return dedupeDocsById(result.docs);
         },
         count: async (data) => {
           // Yes, count is just findMany returning a number.
@@ -371,7 +374,7 @@ export const convexAdapter = <
               paginationOpts,
             });
           });
-          return result.docs.length;
+          return dedupeDocsById(result.docs).length;
         },
         update: async (data): Promise<any> => {
           if (!("runMutation" in ctx)) {

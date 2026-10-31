@@ -76,6 +76,45 @@ describe("eq null guards on plugin fields", () => {
     ).toBe(1);
   });
 
+  it("allows multiple explicit nulls on a unique field", async () => {
+    const { adapter } = setup();
+    // SQL UNIQUE allows any number of NULLs; a null is not a value that can
+    // collide. Only non-null duplicates are rejected.
+    await adapter.create({
+      model: "user",
+      data: { name: "a", email: "a@bar.com", username: null },
+    });
+    const b = await adapter.create({
+      model: "user",
+      data: { name: "b", email: "b@bar.com", username: "b" },
+    });
+    await adapter.create({
+      model: "user",
+      data: { name: "c", email: "c@bar.com", username: null },
+    });
+    await adapter.update({
+      model: "user",
+      where: [{ field: "id", value: b.id }],
+      update: { username: null },
+    });
+    expect(
+      await adapter.count({
+        model: "user",
+        where: [{ field: "username", value: null }],
+      })
+    ).toBe(3);
+    await adapter.create({
+      model: "user",
+      data: { name: "d", email: "d@bar.com", username: "d" },
+    });
+    await expect(
+      adapter.create({
+        model: "user",
+        data: { name: "e", email: "e@bar.com", username: "d" },
+      })
+    ).rejects.toThrow("user username already exists");
+  });
+
   it("does not take the unique-field shortcut for eq null", async () => {
     const { adapter } = setup();
     // `username` is unique and indexed. The single-document shortcut would
