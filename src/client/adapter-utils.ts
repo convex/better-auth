@@ -716,13 +716,33 @@ export const listOne = async <
   betterAuthSchema: BetterAuthDBSchema,
   args: Infer<typeof adapterArgsValidator>
 ): Promise<Doc | null> => {
-  return (
-    await paginate(ctx, schema, betterAuthSchema, {
-      ...args,
-      paginationOpts: {
-        numItems: 1,
-        cursor: null,
-      },
-    })
-  ).page[0] as Doc | null;
+  // A page comes back empty but not done when the static filter rejected
+  // every row in its budget (maximumRowsRead in paginate), so keep reading
+  // until a row turns up or the query is done. Each page reads a bounded
+  // number of rows and the cursor has to move, so the loop ends within the
+  // table.
+  let cursor: string | null = null;
+  for (;;) {
+    const result: PaginationResult<Doc> = await paginate(
+      ctx,
+      schema,
+      betterAuthSchema,
+      {
+        ...args,
+        paginationOpts: { numItems: 1, cursor },
+      }
+    );
+    if (result.page.length) {
+      return result.page[0]!;
+    }
+    if (result.isDone) {
+      return null;
+    }
+    if (result.continueCursor === cursor) {
+      throw new Error(
+        `Pagination cursor did not advance while reading ${args.model}`
+      );
+    }
+    cursor = result.continueCursor;
+  }
 };

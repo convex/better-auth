@@ -1003,6 +1003,39 @@ export const convexCustomTestSuite = createTestSuite(
       expect(typeof user.createdAt).toBe("number");
     },
 
+    "should find a single row past a page of statically rejected rows":
+      async () => {
+        // `image eq null` is a static filter over an unindexed scan. The
+        // component reads 200 rows per page, so the only matching row sits
+        // past a page that rejected every row it read.
+        for (let i = 0; i < 201; i++) {
+          await adapter.create({
+            model: "user",
+            data: {
+              name: `pictured-${i}`,
+              email: `pictured-${i}@example.test`,
+              image: "https://example.test/avatar.png",
+            },
+          });
+        }
+        const target = await adapter.create({
+          model: "user",
+          data: { name: "unpictured", email: "unpictured@example.test" },
+        });
+        const where = [
+          { field: "image", operator: "eq" as const, value: null },
+        ];
+        expect(await adapter.findOne({ model: "user", where })).toEqual(target);
+        expect(
+          await adapter.update({
+            model: "user",
+            where,
+            update: { name: "found" },
+          }),
+        ).toMatchObject({ id: target.id, name: "found" });
+        expect(await adapter.count({ model: "user", where })).toBe(1);
+      },
+
     "should reject case-insensitive where clauses": async () => {
       await adapter.create({
         model: "user",
