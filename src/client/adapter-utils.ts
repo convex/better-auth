@@ -313,6 +313,32 @@ export const checkUniqueFields = async <
   }
 };
 
+// Compare two field values for an in-memory sortBy. A missing or null value
+// sorts before every present value (nulls first ascending, last descending,
+// as in Better Auth's memory adapter) and missing values compare equal to
+// each other, so the comparator stays consistent when only one side is set.
+export const compareSortValues = (
+  a: unknown,
+  b: unknown,
+  direction: "asc" | "desc"
+) => {
+  const aMissing = a === undefined || a === null;
+  const bMissing = b === undefined || b === null;
+  const result =
+    aMissing && bMissing
+      ? 0
+      : aMissing
+        ? -1
+        : bMissing
+          ? 1
+          : (a as any) < (b as any)
+            ? -1
+            : (a as any) > (b as any)
+              ? 1
+              : 0;
+  return direction === "asc" ? result : -result;
+};
+
 // This handles basic select (stripping out the other fields if there
 // is a select arg).
 export const selectFields = <
@@ -625,18 +651,11 @@ export const paginate = async <
                 : (b._creationTime as number) - (a._creationTime as number);
             }
             if (args.sortBy) {
-              const aValue = a[args.sortBy.field as keyof typeof a];
-              const bValue = b[args.sortBy.field as keyof typeof b];
-              if (aValue === bValue) {
-                return 0;
-              }
-              return args.sortBy.direction === "asc"
-                ? aValue! > bValue!
-                  ? 1
-                  : -1
-                : aValue! > bValue!
-                  ? -1
-                  : 1;
+              return compareSortValues(
+                a[args.sortBy.field as keyof typeof a],
+                b[args.sortBy.field as keyof typeof b],
+                args.sortBy.direction
+              );
             }
             return 0;
           })

@@ -14,8 +14,8 @@ import type { SetOptional } from "type-fest";
 import type defaultSchema from "../component/schema.js";
 import type { Where } from "better-auth/types";
 import { asyncMap } from "convex-helpers";
-import { prop, sortBy } from "remeda";
 import { isRunMutationCtx } from "../utils/index.js";
+import { compareSortValues } from "./adapter-utils.js";
 import type { Doc, TableNames } from "../component/_generated/dataModel.js";
 import type { ComponentApi } from "../component/_generated/component.js";
 import type { AuthFunctions, GenericCtx, Triggers } from "./index.js";
@@ -321,10 +321,10 @@ export const convexAdapter = <
             );
             let docs = dedupeDocsById(results.flatMap((r) => r.docs));
             if (data.sortBy) {
-              docs = sortBy(docs, [
-                prop(data.sortBy.field),
-                data.sortBy.direction,
-              ]);
+              const { field, direction } = data.sortBy;
+              docs = [...docs].sort((a, b) =>
+                compareSortValues(a[field], b[field], direction)
+              );
             }
             if (data.limit !== undefined) {
               docs = docs.slice(0, data.limit);
