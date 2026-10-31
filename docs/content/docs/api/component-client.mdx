@@ -72,6 +72,12 @@ export const getUser = query({
 });
 ```
 
+## Route initialization
+
+`registerRoutes()` infers the base path from your auth configuration. Both
+registration methods support MCP and resolve trusted origins for each request,
+including CORS preflights.
+
 ## `registerRoutesLazy()`
 
 Registers Better Auth HTTP handlers without initializing Better Auth during
@@ -96,5 +102,5 @@ export default http;
 If your Better Auth config uses the default `/api/auth` path, you can omit
 `basePath`.
 
-If you use CORS, pass `trustedOrigins` so the `OPTIONS` handler can respond
-without loading Better Auth.
+If you use CORS, pass `trustedOrigins` to override the origins from your Better
+Auth configuration.

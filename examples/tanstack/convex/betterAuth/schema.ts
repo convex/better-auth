@@ -59,11 +59,7 @@ export const tables = {
     .index('accountId', ['accountId'])
     .index('accountId_providerId', ['accountId', 'providerId'])
     .index('providerId_userId', ['providerId', 'userId'])
-    .index('userId_providerId_accountId', [
-      'userId',
-      'providerId',
-      'accountId',
-    ])
+    .index('userId_providerId_accountId', ['userId', 'providerId', 'accountId'])
     .index('userId', ['userId']),
   verification: defineTable({
     identifier: v.string(),
