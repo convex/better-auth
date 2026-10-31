@@ -1,0 +1,9 @@
+{
+  "name": "live-semantics",
+  "private": true,
+  "type": "module",
+  "description": "Scratch Convex app that deploys the Convex semantics test profile to a local backend so src/client/convex-semantics.test.ts can run against a real deployment.",
+  "dependencies": {
+    "convex": "^1.46.0"
+  }
+}

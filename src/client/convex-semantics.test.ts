@@ -26,13 +26,19 @@
  * - `incrementOne` / `consumeOne` honour their guards, including `eq null`
  *   guards on fields that were never written.
  *
- * Every test builds a fresh database, seeds it in one transaction and drives
- * the real client adapter through convex-test, so these tests run on any Node
- * version the rest of the convex-test suite runs on.
+ * Every test starts from an empty database, seeds it in one transaction and
+ * drives the real client adapter. By default the database is convex-test, so
+ * the suite runs on any Node version the rest of the convex-test suite runs
+ * on. With `CONVEX_SEMANTICS_URL` set, the same tests run against a real
+ * Convex deployment serving the scratch app in `e2e/live-semantics` (see
+ * `e2e/live-semantics/run.sh`); tests that need convex-test internals are
+ * skipped there, and a few probes of backend behaviour run only there.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { convexTest } from "convex-test";
+import { ConvexHttpClient } from "convex/browser";
+import { anyApi } from "convex/server";
 import { getAuthTables } from "better-auth/db";
 import type { Where } from "better-auth/types";
 import { api, internal } from "../component/_generated/api.js";
@@ -58,21 +64,85 @@ const profileApi = {
 // the first page exhausts the budget before the page fills and is split.
 const PAGE_SIZE = 200;
 
-const setup = () => {
+type Doc = Record<string, any> & { _id: string; _creationTime: number };
+type Row = { id: string } & Record<string, any>;
+type Adapter = ReturnType<ReturnType<typeof convexAdapter>>;
+
+// What a test needs from the database besides the adapter: raw inserts to
+// seed rows exactly as written (omitted vs explicit null), and raw reads to
+// check the outcome without going back through the adapter.
+type Harness = {
+  adapter: Adapter;
+  insertMany: (
+    table: string,
+    docs: Record<string, unknown>[]
+  ) => Promise<string[]>;
+  collect: (table: string) => Promise<Doc[]>;
+};
+
+const LIVE_URL = process.env.CONVEX_SEMANTICS_URL;
+if (LIVE_URL) {
+  // Every adapter call is an HTTP round trip to the deployment, and the OR
+  // and paging tests make hundreds of them.
+  vi.setConfig({ testTimeout: 120_000 });
+}
+const liveOnly = it.skipIf(!LIVE_URL);
+const convexTestOnly = it.skipIf(!!LIVE_URL);
+
+const convexTestHarness = (): Harness & {
+  t: ReturnType<typeof convexTest>;
+} => {
   const t = convexTest(schema, modules);
   const ctx = {
     runQuery: t.query.bind(t),
     runMutation: t.mutation.bind(t),
   } as any;
-  const adapter = convexAdapter(ctx, profileApi)(convexSemanticsProfileOptions);
-  return { t, adapter };
+  return {
+    t,
+    adapter: convexAdapter(ctx, profileApi)(convexSemanticsProfileOptions),
+    insertMany: (table, docs) =>
+      t.run(async (ctx) => {
+        const ids: string[] = [];
+        for (const doc of docs) {
+          ids.push(String(await ctx.db.insert(table as any, doc)));
+        }
+        return ids;
+      }),
+    collect: (table) =>
+      t.run(
+        async (ctx) => (await ctx.db.query(table as any).collect()) as Doc[]
+      ),
+  };
 };
-type Harness = ReturnType<typeof setup>;
-type Adapter = Harness["adapter"];
 
-type Row = { id: string } & Record<string, any>;
+const liveClient = () => new ConvexHttpClient(LIVE_URL!);
+
+const liveHarness = async (): Promise<Harness> => {
+  const client = liveClient();
+  let more = true;
+  while (more) {
+    ({ more } = await client.mutation(anyApi.harness.clearAll, {}));
+  }
+  const ctx = {
+    runQuery: (ref: any, args: any) => client.query(ref, args),
+    runMutation: (ref: any, args: any) => client.mutation(ref, args),
+  } as any;
+  return {
+    adapter: convexAdapter(ctx, { adapter: anyApi.adapter } as any)(
+      convexSemanticsProfileOptions
+    ),
+    insertMany: (table, docs) =>
+      client.mutation(anyApi.harness.insertMany, { table, docs }),
+    collect: (table) => client.query(anyApi.harness.collect, { table }),
+  };
+};
+
+const setup = (): Promise<Harness> =>
+  LIVE_URL ? liveHarness() : Promise.resolve(convexTestHarness());
+
 const sortedIds = (rows: { id: string }[]) => rows.map((row) => row.id).sort();
 const uniqueIds = (rows: { id: string }[]) => new Set(rows.map((r) => r.id));
+const docIds = (docs: Doc[]) => docs.map((doc) => String(doc._id)).sort();
 
 // ---------------------------------------------------------------------------
 // 1. Omitted vs explicit null, per operator, per field kind, per operation
@@ -85,22 +155,16 @@ const NULL_FIELDS: { field: NullField; kind: string }[] = [
   { field: "uniq", kind: "unique" },
 ];
 
-const seedNullRows = (t: Harness["t"]) =>
-  t.run(async (ctx) => ({
+const seedNullRows = async (h: Harness) => {
+  const [omitted, explicitNull, valued] = await h.insertMany("nullable", [
     // Never written: Convex stores no key at all for these fields.
-    omitted: String(await ctx.db.insert("nullable", {})),
+    {},
     // Written as null: Convex stores the key with a null value.
-    explicitNull: String(
-      await ctx.db.insert("nullable", {
-        plain: null,
-        indexed: null,
-        uniq: null,
-      })
-    ),
-    valued: String(
-      await ctx.db.insert("nullable", { plain: "a", indexed: "a", uniq: "a" })
-    ),
-  }));
+    { plain: null, indexed: null, uniq: null },
+    { plain: "a", indexed: "a", uniq: "a" },
+  ]);
+  return { omitted: omitted!, explicitNull: explicitNull!, valued: valued! };
+};
 type NullRowKey = keyof Awaited<ReturnType<typeof seedNullRows>>;
 
 // Expected matches follow the memory adapter, with one deliberate reading:
@@ -150,26 +214,19 @@ describe.each(NULL_FIELDS)(
   ({ field }) => {
     describe.each(NULL_CASES)("$label", ({ where, expected }) => {
       const prepare = async () => {
-        const harness = setup();
-        const rows = await seedNullRows(harness.t);
+        const h = await setup();
+        const rows = await seedNullRows(h);
         const expectedIds = expected.map((key) => rows[key]).sort();
-        const readCounters = () =>
-          harness.t.run(async (ctx) =>
-            Object.fromEntries(
-              (await ctx.db.query("nullable").collect()).map((doc) => [
-                String(doc._id),
-                doc.counter ?? null,
-              ])
-            )
+        const readCounters = async () =>
+          Object.fromEntries(
+            (await h.collect("nullable")).map((doc) => [
+              String(doc._id),
+              doc.counter ?? null,
+            ])
           );
-        const remainingIds = () =>
-          harness.t.run(async (ctx) =>
-            (await ctx.db.query("nullable").collect())
-              .map((doc) => String(doc._id))
-              .sort()
-          );
+        const remainingIds = async () => docIds(await h.collect("nullable"));
         return {
-          ...harness,
+          adapter: h.adapter,
           rows,
           expectedIds,
           allIds: Object.values(rows).sort(),
@@ -274,22 +331,22 @@ describe.each(NULL_FIELDS)(
 
 describe("null handling on unique fields", () => {
   it("eq null tolerates several rows with a null unique value", async () => {
-    const { t, adapter } = setup();
-    const ids = await t.run(async (ctx) => [
-      String(await ctx.db.insert("nullable", { uniq: null })),
-      String(await ctx.db.insert("nullable", { uniq: null })),
-      String(await ctx.db.insert("nullable", {})),
+    const h = await setup();
+    const ids = await h.insertMany("nullable", [
+      { uniq: null },
+      { uniq: null },
+      {},
     ]);
     const where: Where[] = [{ field: "uniq", operator: "eq", value: null }];
-    const found = await adapter.findMany<Row>({ model: "nullable", where });
+    const found = await h.adapter.findMany<Row>({ model: "nullable", where });
     expect(sortedIds(found)).toEqual(ids.sort());
-    expect(await adapter.count({ model: "nullable", where })).toBe(3);
-    const one = await adapter.findOne<Row>({ model: "nullable", where });
+    expect(await h.adapter.count({ model: "nullable", where })).toBe(3);
+    const one = await h.adapter.findOne<Row>({ model: "nullable", where });
     expect(ids).toContain(one?.id);
   });
 
   it("null values never collide on a unique field", async () => {
-    const { adapter } = setup();
+    const { adapter } = await setup();
     const first = await adapter.create<Row>({
       model: "nullable",
       data: { uniq: null },
@@ -330,56 +387,52 @@ const REJECTED_INSIDE_FIRST_PAGE = [10, 60, 150, 190];
 const REJECTED_AFTER_FIRST_PAGE = [201, 202, 203, 204];
 const MATCHING = SCAN_TOTAL - REJECTED_INSIDE_FIRST_PAGE.length;
 
-const seedUsers = (
-  t: Harness["t"],
+const seedUsers = async (
+  h: Harness,
   rejectedPositions: number[] = REJECTED_INSIDE_FIRST_PAGE
-) =>
-  t.run(async (ctx) => {
-    const now = Date.now();
-    const matching: string[] = [];
-    const other: string[] = [];
-    for (let i = 0; i < SCAN_TOTAL; i++) {
-      const isMatch = !rejectedPositions.includes(i);
-      const id = String(
-        await ctx.db.insert("user", {
-          name: `user-${i}`,
-          email: isMatch
-            ? `fixture-${i}@example.test`
-            : `other-${i}@example.test`,
-          emailVerified: false,
-          createdAt: now,
-          updatedAt: now,
-        })
-      );
-      (isMatch ? matching : other).push(id);
-    }
-    return { matching: matching.sort(), other: other.sort() };
-  });
+) => {
+  const now = Date.now();
+  const flags = Array.from(
+    { length: SCAN_TOTAL },
+    (_, i) => !rejectedPositions.includes(i)
+  );
+  const ids = await h.insertMany(
+    "user",
+    flags.map((isMatch, i) => ({
+      name: `user-${i}`,
+      email: isMatch ? `fixture-${i}@example.test` : `other-${i}@example.test`,
+      emailVerified: false,
+      createdAt: now,
+      updatedAt: now,
+    }))
+  );
+  return {
+    matching: ids.filter((_, i) => flags[i]).sort(),
+    other: ids.filter((_, i) => !flags[i]).sort(),
+  };
+};
 const fixtureWhere: Where[] = [
   { field: "email", operator: "starts_with", value: "fixture-" },
 ];
 
-const readUsers = (t: Harness["t"]) =>
-  t.run(async (ctx) =>
-    (await ctx.db.query("user").collect()).map((doc) => ({
-      ...doc,
-      id: String(doc._id),
-    }))
+const readUsers = async (h: Harness) =>
+  (await h.collect("user")).map(
+    (doc): Row => ({ ...doc, id: String(doc._id) })
   );
 
 describe("filtered scans past a page (unindexed path)", () => {
   it("count visits every matching row once when the page is split", async () => {
-    const { t, adapter } = setup();
-    await seedUsers(t);
-    expect(await adapter.count({ model: "user", where: fixtureWhere })).toBe(
+    const h = await setup();
+    await seedUsers(h);
+    expect(await h.adapter.count({ model: "user", where: fixtureWhere })).toBe(
       MATCHING
     );
   });
 
   it("findMany returns every matching row exactly once", async () => {
-    const { t, adapter } = setup();
-    const { matching } = await seedUsers(t);
-    const found = await adapter.findMany<Row>({
+    const h = await setup();
+    const { matching } = await seedUsers(h);
+    const found = await h.adapter.findMany<Row>({
       model: "user",
       where: fixtureWhere,
       limit: 1000,
@@ -389,10 +442,10 @@ describe("filtered scans past a page (unindexed path)", () => {
   });
 
   it("findMany with a limit past the split returns that many distinct rows", async () => {
-    const { t, adapter } = setup();
-    const { matching } = await seedUsers(t);
+    const h = await setup();
+    const { matching } = await seedUsers(h);
     // Exactly one page: the split happens inside it.
-    const page = await adapter.findMany<Row>({
+    const page = await h.adapter.findMany<Row>({
       model: "user",
       where: fixtureWhere,
       limit: PAGE_SIZE,
@@ -400,14 +453,14 @@ describe("filtered scans past a page (unindexed path)", () => {
     expect(page).toHaveLength(PAGE_SIZE);
     expect(uniqueIds(page).size).toBe(PAGE_SIZE);
     // More than one page, limit above the number of matches.
-    const all = await adapter.findMany<Row>({
+    const all = await h.adapter.findMany<Row>({
       model: "user",
       where: fixtureWhere,
       limit: PAGE_SIZE + 50,
     });
     expect(sortedIds(all)).toEqual(matching);
     // Less than a page: no split, acts as the control.
-    const some = await adapter.findMany<Row>({
+    const some = await h.adapter.findMany<Row>({
       model: "user",
       where: fixtureWhere,
       limit: 150,
@@ -417,15 +470,15 @@ describe("filtered scans past a page (unindexed path)", () => {
   });
 
   it("updateMany counts and updates every matching row once", async () => {
-    const { t, adapter } = setup();
-    const { matching, other } = await seedUsers(t);
-    const count = await adapter.updateMany({
+    const h = await setup();
+    const { matching, other } = await seedUsers(h);
+    const count = await h.adapter.updateMany({
       model: "user",
       where: fixtureWhere,
       update: { name: "updated" },
     });
     expect(count).toBe(MATCHING);
-    const users = await readUsers(t);
+    const users = await readUsers(h);
     expect(sortedIds(users.filter((user) => user.name === "updated"))).toEqual(
       matching
     );
@@ -434,53 +487,56 @@ describe("filtered scans past a page (unindexed path)", () => {
     );
   });
 
-  it("updateMany fires onUpdate exactly once per matching row", async () => {
-    // The adapter runs inside a single mutation here so the component can
-    // resolve the trigger handle; the paginated reads and writes are the same
-    // as from an action. The marker trigger appends one "x" per firing.
-    const t = convexTest(schema, modules);
-    const { matching, other } = await seedUsers(t);
-    const count = await t.run(async (ctx) => {
-      const adapter = convexAdapter(ctx as any, profileApi, {
-        authFunctions: {
-          onUpdate: internal.testTriggerHandlers.userOnUpdateMarker,
-        },
-        triggers: { user: { onUpdate: async () => {} } },
-      })(convexSemanticsProfileOptions);
-      return adapter.updateMany({
-        model: "user",
-        where: fixtureWhere,
-        update: { name: "updated" },
+  convexTestOnly(
+    "updateMany fires onUpdate exactly once per matching row",
+    async () => {
+      // The adapter runs inside a single mutation here so the component can
+      // resolve the trigger handle; the paginated reads and writes are the
+      // same as from an action. The marker trigger appends one "x" per firing.
+      const h = convexTestHarness();
+      const { matching, other } = await seedUsers(h);
+      const count = await h.t.run(async (ctx) => {
+        const adapter = convexAdapter(ctx as any, profileApi, {
+          authFunctions: {
+            onUpdate: internal.testTriggerHandlers.userOnUpdateMarker,
+          },
+          triggers: { user: { onUpdate: async () => {} } },
+        })(convexSemanticsProfileOptions);
+        return adapter.updateMany({
+          model: "user",
+          where: fixtureWhere,
+          update: { name: "updated" },
+        });
       });
-    });
-    expect(count).toBe(MATCHING);
-    const users = await readUsers(t);
-    expect(sortedIds(users.filter((user) => user.image === "x"))).toEqual(
-      matching
-    );
-    expect(sortedIds(users.filter((user) => user.image === undefined))).toEqual(
-      other
-    );
-  });
+      expect(count).toBe(MATCHING);
+      const users = await readUsers(h);
+      expect(sortedIds(users.filter((user) => user.image === "x"))).toEqual(
+        matching
+      );
+      expect(
+        sortedIds(users.filter((user) => user.image === undefined))
+      ).toEqual(other);
+    }
+  );
 
   it("deleteMany deletes every matching row and nothing else", async () => {
-    const { t, adapter } = setup();
-    const { other } = await seedUsers(t);
-    const count = await adapter.deleteMany({
+    const h = await setup();
+    const { other } = await seedUsers(h);
+    const count = await h.adapter.deleteMany({
       model: "user",
       where: fixtureWhere,
     });
     expect(count).toBe(MATCHING);
-    expect(sortedIds(await readUsers(t))).toEqual(other);
+    expect(sortedIds(await readUsers(h))).toEqual(other);
   });
 
   it("control: rejected rows after the first page need no split", async () => {
-    const { t, adapter } = setup();
-    const { matching } = await seedUsers(t, REJECTED_AFTER_FIRST_PAGE);
-    expect(await adapter.count({ model: "user", where: fixtureWhere })).toBe(
+    const h = await setup();
+    const { matching } = await seedUsers(h, REJECTED_AFTER_FIRST_PAGE);
+    expect(await h.adapter.count({ model: "user", where: fixtureWhere })).toBe(
       MATCHING
     );
-    const found = await adapter.findMany<Row>({
+    const found = await h.adapter.findMany<Row>({
       model: "user",
       where: fixtureWhere,
       limit: 1000,
@@ -489,10 +545,10 @@ describe("filtered scans past a page (unindexed path)", () => {
   });
 
   it("offset is rejected loudly rather than silently ignored", async () => {
-    const { t, adapter } = setup();
-    await seedUsers(t);
+    const h = await setup();
+    await seedUsers(h);
     await expect(
-      adapter.findMany({ model: "user", where: fixtureWhere, offset: 5 })
+      h.adapter.findMany({ model: "user", where: fixtureWhere, offset: 5 })
     ).rejects.toThrow(/offset/);
   });
 });
@@ -500,52 +556,54 @@ describe("filtered scans past a page (unindexed path)", () => {
 describe("filtered scans past a page (indexed path with a static filter)", () => {
   // `userId eq` is served by the `userId` index; `userAgent ne` is applied as
   // a static filter on top of the index range, rejecting rows inside the page.
-  const seedSessions = (t: Harness["t"]) =>
-    t.run(async (ctx) => {
-      const now = Date.now();
-      const matching: string[] = [];
-      const other: string[] = [];
-      for (let i = 0; i < SCAN_TOTAL; i++) {
-        const isMatch = !REJECTED_INSIDE_FIRST_PAGE.includes(i);
-        const id = String(
-          await ctx.db.insert("session", {
-            token: `token-${i}`,
-            userId: "scan-user",
-            userAgent: isMatch ? "browser" : "bot",
-            expiresAt: now + 60_000,
-            createdAt: now,
-            updatedAt: now,
-          })
-        );
-        (isMatch ? matching : other).push(id);
-      }
-      // Rows for another user share the index but are outside the range.
-      for (let i = 0; i < 5; i++) {
-        await ctx.db.insert("session", {
-          token: `other-token-${i}`,
-          userId: "another-user",
-          expiresAt: now + 60_000,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-      return { matching: matching.sort(), other: other.sort() };
-    });
+  const seedSessions = async (h: Harness) => {
+    const now = Date.now();
+    const flags = Array.from(
+      { length: SCAN_TOTAL },
+      (_, i) => !REJECTED_INSIDE_FIRST_PAGE.includes(i)
+    );
+    const ids = await h.insertMany(
+      "session",
+      flags.map((isMatch, i) => ({
+        token: `token-${i}`,
+        userId: "scan-user",
+        userAgent: isMatch ? "browser" : "bot",
+        expiresAt: now + 60_000,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    );
+    // Rows for another user share the index but are outside the range.
+    await h.insertMany(
+      "session",
+      Array.from({ length: 5 }, (_, i) => ({
+        token: `other-token-${i}`,
+        userId: "another-user",
+        expiresAt: now + 60_000,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    );
+    return {
+      matching: ids.filter((_, i) => flags[i]).sort(),
+      other: ids.filter((_, i) => !flags[i]).sort(),
+    };
+  };
   const where: Where[] = [
     { field: "userId", operator: "eq", value: "scan-user" },
     { field: "userAgent", operator: "ne", value: "bot" },
   ];
 
   it("count visits every matching row once", async () => {
-    const { t, adapter } = setup();
-    await seedSessions(t);
-    expect(await adapter.count({ model: "session", where })).toBe(MATCHING);
+    const h = await setup();
+    await seedSessions(h);
+    expect(await h.adapter.count({ model: "session", where })).toBe(MATCHING);
   });
 
   it("findMany returns every matching row exactly once", async () => {
-    const { t, adapter } = setup();
-    const { matching } = await seedSessions(t);
-    const found = await adapter.findMany<Row>({
+    const h = await setup();
+    const { matching } = await seedSessions(h);
+    const found = await h.adapter.findMany<Row>({
       model: "session",
       where,
       limit: 1000,
@@ -554,25 +612,22 @@ describe("filtered scans past a page (indexed path with a static filter)", () =>
   });
 
   it("updateMany and deleteMany count every matching row once", async () => {
-    const { t, adapter } = setup();
-    const { other } = await seedSessions(t);
+    const h = await setup();
+    const { other } = await seedSessions(h);
     expect(
-      await adapter.updateMany({
+      await h.adapter.updateMany({
         model: "session",
         where,
         update: { ipAddress: "10.0.0.1" },
       })
     ).toBe(MATCHING);
-    expect(await adapter.deleteMany({ model: "session", where })).toBe(
+    expect(await h.adapter.deleteMany({ model: "session", where })).toBe(
       MATCHING
     );
-    const remaining = await t.run((ctx) =>
-      ctx.db
-        .query("session")
-        .withIndex("userId", (q) => q.eq("userId", "scan-user"))
-        .collect()
+    const remaining = (await h.collect("session")).filter(
+      (doc) => doc.userId === "scan-user"
     );
-    expect(remaining.map((doc) => String(doc._id)).sort()).toEqual(other);
+    expect(docIds(remaining)).toEqual(other);
   });
 });
 
@@ -590,21 +645,13 @@ describe("sortBy on a field some rows lack", () => {
     null,
     "c",
   ];
-  const seedSortRows = (t: Harness["t"]) =>
-    t.run(async (ctx) => {
-      const ids: string[] = [];
-      for (const value of SORT_VALUES) {
-        ids.push(
-          String(
-            await ctx.db.insert(
-              "nullable",
-              value === undefined ? {} : { plain: value, indexed: value }
-            )
-          )
-        );
-      }
-      return ids;
-    });
+  const seedSortRows = (h: Harness) =>
+    h.insertMany(
+      "nullable",
+      SORT_VALUES.map((value) =>
+        value === undefined ? {} : { plain: value, indexed: value }
+      )
+    );
   const values = (rows: Row[], field: string) =>
     rows.map((row) => row[field] ?? null);
   const ASC = [null, null, "a", "b", "c"];
@@ -615,14 +662,14 @@ describe("sortBy on a field some rows lack", () => {
     { field: "plain", kind: "unindexed" },
   ])("$kind field `$field`", ({ field }) => {
     it("sorts ascending with nulls first and descending with nulls last", async () => {
-      const { t, adapter } = setup();
-      await seedSortRows(t);
-      const asc = await adapter.findMany<Row>({
+      const h = await setup();
+      await seedSortRows(h);
+      const asc = await h.adapter.findMany<Row>({
         model: "nullable",
         sortBy: { field, direction: "asc" },
       });
       expect(values(asc, field)).toEqual(ASC);
-      const desc = await adapter.findMany<Row>({
+      const desc = await h.adapter.findMany<Row>({
         model: "nullable",
         sortBy: { field, direction: "desc" },
       });
@@ -630,15 +677,15 @@ describe("sortBy on a field some rows lack", () => {
     });
 
     it("applies the limit after sorting", async () => {
-      const { t, adapter } = setup();
-      await seedSortRows(t);
-      const asc = await adapter.findMany<Row>({
+      const h = await setup();
+      await seedSortRows(h);
+      const asc = await h.adapter.findMany<Row>({
         model: "nullable",
         sortBy: { field, direction: "asc" },
         limit: 2,
       });
       expect(values(asc, field)).toEqual([null, null]);
-      const desc = await adapter.findMany<Row>({
+      const desc = await h.adapter.findMany<Row>({
         model: "nullable",
         sortBy: { field, direction: "desc" },
         limit: 2,
@@ -647,16 +694,16 @@ describe("sortBy on a field some rows lack", () => {
     });
 
     it("sorts an `id in` lookup", async () => {
-      const { t, adapter } = setup();
-      const ids = await seedSortRows(t);
+      const h = await setup();
+      const ids = await seedSortRows(h);
       const where: Where[] = [{ field: "id", operator: "in", value: ids }];
-      const asc = await adapter.findMany<Row>({
+      const asc = await h.adapter.findMany<Row>({
         model: "nullable",
         where,
         sortBy: { field, direction: "asc" },
       });
       expect(values(asc, field)).toEqual(ASC);
-      const desc = await adapter.findMany<Row>({
+      const desc = await h.adapter.findMany<Row>({
         model: "nullable",
         where,
         sortBy: { field, direction: "desc" },
@@ -665,20 +712,20 @@ describe("sortBy on a field some rows lack", () => {
     });
 
     it("sorts an OR union", async () => {
-      const { t, adapter } = setup();
-      await seedSortRows(t);
+      const h = await setup();
+      await seedSortRows(h);
       // Both branches together cover every row; the union must still sort.
       const where: Where[] = [
         { field: "indexed", operator: "eq", value: "a", connector: "OR" },
         { field: "plain", operator: "ne", value: "a", connector: "OR" },
       ];
-      const asc = await adapter.findMany<Row>({
+      const asc = await h.adapter.findMany<Row>({
         model: "nullable",
         where,
         sortBy: { field, direction: "asc" },
       });
       expect(values(asc, field)).toEqual(ASC);
-      const desc = await adapter.findMany<Row>({
+      const desc = await h.adapter.findMany<Row>({
         model: "nullable",
         where,
         sortBy: { field, direction: "desc" },
@@ -718,7 +765,7 @@ describe("table-level unique indexes", () => {
   });
 
   it("create rejects a duplicate pair and allows new pairs", async () => {
-    const { adapter } = setup();
+    const { adapter } = await setup();
     await adapter.create(clientResource("client-1", "resource-1"));
     await expect(
       adapter.create(clientResource("client-1", "resource-1"))
@@ -740,7 +787,7 @@ describe("table-level unique indexes", () => {
   });
 
   it("update rejects moving a row onto an existing pair", async () => {
-    const { adapter } = setup();
+    const { adapter } = await setup();
     await adapter.create(clientResource("client-1", "resource-1"));
     const movable = await adapter.create<Row>(
       clientResource("client-2", "resource-1")
@@ -774,7 +821,7 @@ describe("table-level unique indexes", () => {
   });
 
   it("incrementOne with `set` rejects moving a row onto an existing pair", async () => {
-    const { adapter } = setup();
+    const { adapter } = await setup();
     await adapter.create(clientResource("client-1", "resource-1"));
     const movable = await adapter.create<Row>(
       clientResource("client-2", "resource-1")
@@ -797,51 +844,45 @@ describe("table-level unique indexes", () => {
   });
 
   // 230 rows with distinct clientIds and the same resourceId span two pages.
-  const seedClientResources = (t: Harness["t"], extra: [string, string][]) =>
-    t.run(async (ctx) => {
-      for (let i = 0; i < PAGE_SIZE + 30; i++) {
-        await ctx.db.insert("clientResource", {
-          clientId: `client-${i}`,
-          resourceId: "resource-1",
-        });
-      }
-      for (const [clientId, resourceId] of extra) {
-        await ctx.db.insert("clientResource", { clientId, resourceId });
-      }
-    });
-  const readPairs = (t: Harness["t"]) =>
-    t.run(async (ctx) =>
-      (await ctx.db.query("clientResource").collect()).map(
-        (doc) => `${doc.clientId}/${doc.resourceId}`
-      )
+  const seedClientResources = (h: Harness, extra: [string, string][]) =>
+    h.insertMany("clientResource", [
+      ...Array.from({ length: PAGE_SIZE + 30 }, (_, i) => ({
+        clientId: `client-${i}`,
+        resourceId: "resource-1",
+      })),
+      ...extra.map(([clientId, resourceId]) => ({ clientId, resourceId })),
+    ]);
+  const readPairs = async (h: Harness) =>
+    (await h.collect("clientResource")).map(
+      (doc) => `${doc.clientId}/${doc.resourceId}`
     );
 
   it("updateMany spanning pages never produces a duplicate pair", async () => {
-    const { t, adapter } = setup();
+    const h = await setup();
     // The collision is on the second page: client-215 already has resource-2.
-    await seedClientResources(t, [["client-215", "resource-2"]]);
+    await seedClientResources(h, [["client-215", "resource-2"]]);
     await expect(
-      adapter.updateMany({
+      h.adapter.updateMany({
         model: "clientResource",
         where: [{ field: "resourceId", operator: "eq", value: "resource-1" }],
         update: { resourceId: "resource-2" },
       })
     ).rejects.toThrow();
-    const pairs = await readPairs(t);
+    const pairs = await readPairs(h);
     expect(new Set(pairs).size).toBe(pairs.length);
   });
 
   it("updateMany spanning pages succeeds when every pair stays unique", async () => {
-    const { t, adapter } = setup();
-    await seedClientResources(t, []);
+    const h = await setup();
+    await seedClientResources(h, []);
     await expect(
-      adapter.updateMany({
+      h.adapter.updateMany({
         model: "clientResource",
         where: [{ field: "resourceId", operator: "eq", value: "resource-1" }],
         update: { resourceId: "resource-2" },
       })
     ).resolves.toBe(PAGE_SIZE + 30);
-    const pairs = await readPairs(t);
+    const pairs = await readPairs(h);
     expect(pairs).toHaveLength(PAGE_SIZE + 30);
     expect(pairs.every((pair) => pair.endsWith("/resource-2"))).toBe(true);
     expect(new Set(pairs).size).toBe(pairs.length);
@@ -859,7 +900,7 @@ describe("table-level unique indexes", () => {
     });
 
     it("rejects duplicate deviceCode and userCode values", async () => {
-      const { adapter } = setup();
+      const { adapter } = await setup();
       await adapter.create(deviceCode("device-1", "USER-1"));
       await expect(
         adapter.create(deviceCode("device-1", "USER-2"))
@@ -881,7 +922,7 @@ describe("table-level unique indexes", () => {
     });
 
     it("looks up and consumes rows by the table-level unique fields", async () => {
-      const { adapter } = setup();
+      const { adapter } = await setup();
       const created = await adapter.create<Row>(
         deviceCode("device-1", "USER-1")
       );
@@ -938,36 +979,32 @@ describe("table-level unique indexes", () => {
 // ---------------------------------------------------------------------------
 
 describe("incrementOne", () => {
-  const readCounter = (t: Harness["t"], id: string) =>
-    t.run(async (ctx) =>
-      (await ctx.db.query("nullable").collect()).find(
-        (doc) => String(doc._id) === id
-      )
-    );
+  const readRow = async (h: Harness, id: string) =>
+    (await h.collect("nullable")).find((doc) => String(doc._id) === id);
 
   it("increments a field that was never written, starting from 0", async () => {
-    const { t, adapter } = setup();
-    const row = await adapter.create<Row>({ model: "nullable", data: {} });
-    const first = await adapter.incrementOne<Row>({
+    const h = await setup();
+    const row = await h.adapter.create<Row>({ model: "nullable", data: {} });
+    const first = await h.adapter.incrementOne<Row>({
       model: "nullable",
       where: [{ field: "id", value: row.id }],
       increment: { counter: 1 },
     });
     expect(first?.counter).toBe(1);
-    expect((await readCounter(t, row.id))?.counter).toBe(1);
-    const second = await adapter.incrementOne<Row>({
+    expect((await readRow(h, row.id))?.counter).toBe(1);
+    const second = await h.adapter.incrementOne<Row>({
       model: "nullable",
       where: [{ field: "id", value: row.id }],
       increment: { counter: 2 },
     });
     expect(second?.counter).toBe(3);
-    expect((await readCounter(t, row.id))?.counter).toBe(3);
+    expect((await readRow(h, row.id))?.counter).toBe(3);
   });
 
   it("applies `set` with an empty `increment`", async () => {
-    const { t, adapter } = setup();
-    const row = await adapter.create<Row>({ model: "nullable", data: {} });
-    const result = await adapter.incrementOne<Row>({
+    const h = await setup();
+    const row = await h.adapter.create<Row>({ model: "nullable", data: {} });
+    const result = await h.adapter.incrementOne<Row>({
       model: "nullable",
       where: [{ field: "id", value: row.id }],
       increment: {},
@@ -975,13 +1012,13 @@ describe("incrementOne", () => {
     });
     expect(result).toMatchObject({ id: row.id, plain: "set-only" });
     expect(result?.counter ?? null).toBeNull();
-    const stored = await readCounter(t, row.id);
+    const stored = await readRow(h, row.id);
     expect(stored?.plain).toBe("set-only");
     expect(stored?.counter ?? null).toBeNull();
   });
 
   it("applies `increment` and `set` together", async () => {
-    const { adapter } = setup();
+    const { adapter } = await setup();
     const row = await adapter.create<Row>({
       model: "nullable",
       data: { counter: 5 },
@@ -1000,10 +1037,10 @@ describe("incrementOne", () => {
     { field: "indexed", kind: "indexed" },
   ])("`eq null` guard on $kind field `$field`", ({ field }) => {
     it("claims a never-written row once", async () => {
-      const { t, adapter } = setup();
-      const row = await adapter.create<Row>({ model: "nullable", data: {} });
+      const h = await setup();
+      const row = await h.adapter.create<Row>({ model: "nullable", data: {} });
       const claim = () =>
-        adapter.incrementOne<Row>({
+        h.adapter.incrementOne<Row>({
           model: "nullable",
           where: [
             { field: "id", value: row.id },
@@ -1018,11 +1055,11 @@ describe("incrementOne", () => {
         [field]: "claimed",
       });
       await expect(claim()).resolves.toBeNull();
-      expect((await readCounter(t, row.id))?.counter).toBe(1);
+      expect((await readRow(h, row.id))?.counter).toBe(1);
     });
 
     it("claims a never-written row by the guard alone", async () => {
-      const { adapter } = setup();
+      const { adapter } = await setup();
       const row = await adapter.create<Row>({ model: "nullable", data: {} });
       await expect(
         adapter.incrementOne<Row>({
@@ -1042,7 +1079,7 @@ describe("incrementOne", () => {
     });
 
     it("does not claim a row whose field is set", async () => {
-      const { adapter } = setup();
+      const { adapter } = await setup();
       const row = await adapter.create<Row>({
         model: "nullable",
         data: { [field]: "taken" },
@@ -1061,7 +1098,7 @@ describe("incrementOne", () => {
   });
 
   it("supports the rate limiter's guarded window update", async () => {
-    const { adapter } = setup();
+    const { adapter } = await setup();
     const start = Date.now() - 1_000;
     await adapter.create({
       model: "rateLimit",
@@ -1098,42 +1135,35 @@ describe("incrementOne", () => {
 });
 
 describe("consumeOne", () => {
-  const remaining = (t: Harness["t"]) =>
-    t.run(async (ctx) =>
-      (await ctx.db.query("nullable").collect())
-        .map((doc) => String(doc._id))
-        .sort()
-    );
+  const remaining = async (h: Harness) => docIds(await h.collect("nullable"));
 
   it("returns null and deletes nothing with 0 matches", async () => {
-    const { t, adapter } = setup();
-    const ids = await t.run(async (ctx) => [
-      String(await ctx.db.insert("nullable", { indexed: "solo" })),
-    ]);
+    const h = await setup();
+    const ids = await h.insertMany("nullable", [{ indexed: "solo" }]);
     await expect(
-      adapter.consumeOne({
+      h.adapter.consumeOne({
         model: "nullable",
         where: [{ field: "indexed", value: "none" }],
       })
     ).resolves.toBeNull();
-    expect(await remaining(t)).toEqual(ids);
+    expect(await remaining(h)).toEqual(ids);
   });
 
   it("returns and deletes the row with 1 match", async () => {
-    const { t, adapter } = setup();
-    const [solo, keep] = await t.run(async (ctx) => [
-      String(await ctx.db.insert("nullable", { indexed: "solo" })),
-      String(await ctx.db.insert("nullable", { indexed: "keep" })),
+    const h = await setup();
+    const [solo, keep] = await h.insertMany("nullable", [
+      { indexed: "solo" },
+      { indexed: "keep" },
     ]);
     await expect(
-      adapter.consumeOne<Row>({
+      h.adapter.consumeOne<Row>({
         model: "nullable",
         where: [{ field: "indexed", value: "solo" }],
       })
     ).resolves.toMatchObject({ id: solo, indexed: "solo" });
-    expect(await remaining(t)).toEqual([keep]);
+    expect(await remaining(h)).toEqual([keep]);
     await expect(
-      adapter.consumeOne({
+      h.adapter.consumeOne({
         model: "nullable",
         where: [{ field: "indexed", value: "solo" }],
       })
@@ -1141,35 +1171,33 @@ describe("consumeOne", () => {
   });
 
   it("consumes exactly one row with 2 matches", async () => {
-    const { t, adapter } = setup();
-    const dups = await t.run(async (ctx) => [
-      String(await ctx.db.insert("nullable", { indexed: "dup" })),
-      String(await ctx.db.insert("nullable", { indexed: "dup" })),
+    const h = await setup();
+    const dups = await h.insertMany("nullable", [
+      { indexed: "dup" },
+      { indexed: "dup" },
     ]);
-    const first = await adapter.consumeOne<Row>({
+    const first = await h.adapter.consumeOne<Row>({
       model: "nullable",
       where: [{ field: "indexed", value: "dup" }],
     });
     expect(dups).toContain(first?.id);
-    expect(await remaining(t)).toEqual(dups.filter((id) => id !== first?.id));
-    const second = await adapter.consumeOne<Row>({
+    expect(await remaining(h)).toEqual(dups.filter((id) => id !== first?.id));
+    const second = await h.adapter.consumeOne<Row>({
       model: "nullable",
       where: [{ field: "indexed", value: "dup" }],
     });
     expect(second?.id).toBe(dups.find((id) => id !== first?.id));
-    expect(await remaining(t)).toEqual([]);
+    expect(await remaining(h)).toEqual([]);
   });
 
   it("honours an `eq null` guard on a never-written field", async () => {
-    const { t, adapter } = setup();
-    const [fresh, used] = await t.run(async (ctx) => [
-      String(await ctx.db.insert("nullable", { indexed: "code" })),
-      String(
-        await ctx.db.insert("nullable", { indexed: "code", plain: "used" })
-      ),
+    const h = await setup();
+    const [fresh, used] = await h.insertMany("nullable", [
+      { indexed: "code" },
+      { indexed: "code", plain: "used" },
     ]);
     await expect(
-      adapter.consumeOne<Row>({
+      h.adapter.consumeOne<Row>({
         model: "nullable",
         where: [
           { field: "indexed", value: "code" },
@@ -1178,7 +1206,7 @@ describe("consumeOne", () => {
       })
     ).resolves.toMatchObject({ id: fresh });
     await expect(
-      adapter.consumeOne<Row>({
+      h.adapter.consumeOne<Row>({
         model: "nullable",
         where: [
           { field: "indexed", value: "code" },
@@ -1186,7 +1214,7 @@ describe("consumeOne", () => {
         ],
       })
     ).resolves.toBeNull();
-    expect(await remaining(t)).toEqual([used]);
+    expect(await remaining(h)).toEqual([used]);
   });
 });
 
@@ -1195,19 +1223,25 @@ describe("consumeOne", () => {
 // ---------------------------------------------------------------------------
 
 describe("OR connectors mixing indexed and unindexed fields", () => {
-  const seedOrRows = (t: Harness["t"]) =>
-    t.run(async (ctx) => ({
-      both: String(
-        await ctx.db.insert("nullable", { indexed: "i", plain: "p" })
-      ),
-      indexedOnly: String(await ctx.db.insert("nullable", { indexed: "i" })),
-      plainOnly: String(await ctx.db.insert("nullable", { plain: "p" })),
-      uniqOnly: String(await ctx.db.insert("nullable", { uniq: "u" })),
-      neither: String(
-        await ctx.db.insert("nullable", { indexed: "other", plain: "q" })
-      ),
-      empty: String(await ctx.db.insert("nullable", {})),
-    }));
+  const seedOrRows = async (h: Harness) => {
+    const [both, indexedOnly, plainOnly, uniqOnly, neither, empty] =
+      await h.insertMany("nullable", [
+        { indexed: "i", plain: "p" },
+        { indexed: "i" },
+        { plain: "p" },
+        { uniq: "u" },
+        { indexed: "other", plain: "q" },
+        {},
+      ]);
+    return {
+      both: both!,
+      indexedOnly: indexedOnly!,
+      plainOnly: plainOnly!,
+      uniqOnly: uniqOnly!,
+      neither: neither!,
+      empty: empty!,
+    };
+  };
   type OrRowKey = keyof Awaited<ReturnType<typeof seedOrRows>>;
   const indexedOrPlain: Where[] = [
     { field: "indexed", operator: "eq", value: "i", connector: "OR" },
@@ -1238,9 +1272,9 @@ describe("OR connectors mixing indexed and unindexed fields", () => {
   };
 
   it("unions an indexed branch with an unindexed branch without duplicates", async () => {
-    const { t, adapter } = setup();
-    const rows = await seedOrRows(t);
-    await expectRows(adapter, rows, indexedOrPlain, [
+    const h = await setup();
+    const rows = await seedOrRows(h);
+    await expectRows(h.adapter, rows, indexedOrPlain, [
       "both",
       "indexedOnly",
       "plainOnly",
@@ -1248,9 +1282,9 @@ describe("OR connectors mixing indexed and unindexed fields", () => {
   });
 
   it("unions a unique branch with an unindexed branch", async () => {
-    const { t, adapter } = setup();
-    const rows = await seedOrRows(t);
-    await expectRows(adapter, rows, uniqOrPlain, [
+    const h = await setup();
+    const rows = await seedOrRows(h);
+    await expectRows(h.adapter, rows, uniqOrPlain, [
       "both",
       "plainOnly",
       "uniqOnly",
@@ -1258,9 +1292,9 @@ describe("OR connectors mixing indexed and unindexed fields", () => {
   });
 
   it("unions an `eq null` branch on a never-written indexed field", async () => {
-    const { t, adapter } = setup();
-    const rows = await seedOrRows(t);
-    await expectRows(adapter, rows, nullOrPlain, [
+    const h = await setup();
+    const rows = await seedOrRows(h);
+    await expectRows(h.adapter, rows, nullOrPlain, [
       "plainOnly",
       "uniqOnly",
       "neither",
@@ -1269,22 +1303,20 @@ describe("OR connectors mixing indexed and unindexed fields", () => {
   });
 
   it("updateMany and deleteMany apply once per row of the union", async () => {
-    const { t, adapter } = setup();
-    const rows = await seedOrRows(t);
+    const h = await setup();
+    const rows = await seedOrRows(h);
     expect(
-      await adapter.updateMany({
+      await h.adapter.updateMany({
         model: "nullable",
         where: indexedOrPlain,
         update: { counter: 7 },
       })
     ).toBe(3);
-    const counters = await t.run(async (ctx) =>
-      Object.fromEntries(
-        (await ctx.db.query("nullable").collect()).map((doc) => [
-          String(doc._id),
-          doc.counter ?? null,
-        ])
-      )
+    const counters = Object.fromEntries(
+      (await h.collect("nullable")).map((doc) => [
+        String(doc._id),
+        doc.counter ?? null,
+      ])
     );
     for (const [key, id] of Object.entries(rows)) {
       expect(counters[id]).toBe(
@@ -1292,19 +1324,16 @@ describe("OR connectors mixing indexed and unindexed fields", () => {
       );
     }
     expect(
-      await adapter.deleteMany({ model: "nullable", where: indexedOrPlain })
+      await h.adapter.deleteMany({ model: "nullable", where: indexedOrPlain })
     ).toBe(3);
-    const remaining = await t.run(async (ctx) =>
-      (await ctx.db.query("nullable").collect())
-        .map((doc) => String(doc._id))
-        .sort()
+    expect(docIds(await h.collect("nullable"))).toEqual(
+      [rows.uniqOnly, rows.neither, rows.empty].sort()
     );
-    expect(remaining).toEqual([rows.uniqOnly, rows.neither, rows.empty].sort());
   });
 
   it("unions past a page with rejected rows in the scan", async () => {
-    const { t, adapter } = setup();
-    const { matching, other } = await seedUsers(t);
+    const h = await setup();
+    const { matching, other } = await seedUsers(h);
     // `user-10` is one of the rejected rows; the union adds it back.
     const where: Where[] = [
       {
@@ -1315,11 +1344,11 @@ describe("OR connectors mixing indexed and unindexed fields", () => {
       },
       { field: "name", operator: "eq", value: "user-10", connector: "OR" },
     ];
-    const users = await readUsers(t);
+    const users = await readUsers(h);
     const user10 = users.find((user) => user.name === "user-10")!.id;
     const expected = [...matching, user10].sort();
-    expect(await adapter.count({ model: "user", where })).toBe(MATCHING + 1);
-    const found = await adapter.findMany<Row>({
+    expect(await h.adapter.count({ model: "user", where })).toBe(MATCHING + 1);
+    const found = await h.adapter.findMany<Row>({
       model: "user",
       where,
       limit: 1000,
@@ -1327,17 +1356,87 @@ describe("OR connectors mixing indexed and unindexed fields", () => {
     expect(sortedIds(found)).toEqual(expected);
     // Update a field neither branch filters on so the union stays the same.
     expect(
-      await adapter.updateMany({
+      await h.adapter.updateMany({
         model: "user",
         where,
         update: { emailVerified: true },
       })
     ).toBe(MATCHING + 1);
-    expect(await adapter.deleteMany({ model: "user", where })).toBe(
+    expect(await h.adapter.deleteMany({ model: "user", where })).toBe(
       MATCHING + 1
     );
-    expect(sortedIds(await readUsers(t))).toEqual(
+    expect(sortedIds(await readUsers(h))).toEqual(
       other.filter((id) => id !== user10)
     );
   });
+});
+
+// ---------------------------------------------------------------------------
+// 8. Backend behaviour the suite relies on (live deployment only)
+// ---------------------------------------------------------------------------
+
+describe("backend behaviour (live deployment)", () => {
+  liveOnly(
+    "assigns distinct, increasing creation times within one mutation",
+    async () => {
+      const h = await setup();
+      await h.insertMany(
+        "nullable",
+        Array.from({ length: SCAN_TOTAL }, (_, i) => ({ counter: i }))
+      );
+      const times: number[] = await liveClient().query(
+        anyApi.harness.creationTimes,
+        { table: "nullable" }
+      );
+      expect(times).toHaveLength(SCAN_TOTAL);
+      for (let i = 1; i < times.length; i++) {
+        expect(times[i]!).toBeGreaterThan(times[i - 1]!);
+      }
+    }
+  );
+
+  liveOnly(
+    "orders an index with omitted values first, then null, then values",
+    async () => {
+      const h = await setup();
+      await h.insertMany("nullable", [
+        { indexed: "b" },
+        {},
+        { indexed: "a" },
+        { indexed: null },
+        { indexed: "c" },
+      ]);
+      await expect(
+        liveClient().query(anyApi.harness.indexedOrder, { direction: "asc" })
+      ).resolves.toEqual(["<omitted>", null, "a", "b", "c"]);
+      await expect(
+        liveClient().query(anyApi.harness.indexedOrder, { direction: "desc" })
+      ).resolves.toEqual(["c", "b", "a", null, "<omitted>"]);
+    }
+  );
+
+  liveOnly(
+    "a single function that reads past the document limit fails loudly",
+    async () => {
+      const h = await setup();
+      // A function may read at most 32,000 documents (backend knob
+      // TRANSACTION_MAX_READ_SIZE_ROWS); go just past it.
+      const total = 32_000 + 100;
+      const batch = 4_000;
+      for (let start = 0; start < total; start += batch) {
+        await liveClient().mutation(anyApi.harness.insertBulk, {
+          start,
+          count: Math.min(batch, total - start),
+        });
+      }
+      // Whichever per-function limit trips first (documents read, or the
+      // system-operations budget the reads consume), the failure is loud.
+      await expect(
+        liveClient().query(anyApi.harness.countAll, { table: "nullable" })
+      ).rejects.toThrow(/Too many documents read|too many system operations/);
+      // The adapter's paged reads stay under the limit and still see every row.
+      expect(await h.adapter.count({ model: "nullable" })).toBe(total);
+    },
+    180_000
+  );
 });
