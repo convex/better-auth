@@ -50,25 +50,52 @@ const specialFields = (tables: BetterAuthDBSchema) =>
       )
   );
 
-const mergedIndexFields = (tables: BetterAuthDBSchema) =>
+const mergedIndexFields = (
+  tables: BetterAuthDBSchema
+): Record<string, string[][]> =>
   Object.fromEntries(
     Object.entries(tables).map(([key, table]) => {
-      const manualIndexes =
-        indexFields[key as keyof typeof indexFields]?.map((index) => {
-          return typeof index === "string"
-            ? (table.fields[index]?.fieldName ?? index)
-            : index.map((i) => table.fields[i]?.fieldName ?? i);
-        }) || [];
+      const fieldName = (field: string) =>
+        table.fields[field]?.fieldName ?? field;
+      // Convex indexes are matched by sorted field prefix (see findIndex in
+      // adapter-utils), so compound indexes are emitted in sorted field order.
+      const sorted = (index: string[]) => [...index].sort();
+      const manualIndexes = (
+        indexFields[key as keyof typeof indexFields] ?? []
+      ).map((index) =>
+        sorted(
+          typeof index === "string"
+            ? [fieldName(index)]
+            : index.map((i) => fieldName(i))
+        )
+      );
+      // Table-level indexes declared by Better Auth core or plugins (1.7
+      // `indexes: [{ fields, unique }]`), in declared order.
+      const schemaIndexes = (table.indexes ?? []).map((index) =>
+        sorted(index.fields.map((field) => fieldName(field)))
+      );
+      // Single-field indexes for unique/sortable/reference fields, unless
+      // an index above already starts with that field.
       const specialFieldIndexes = Object.keys(
         specialFields(tables)[key as keyof ReturnType<typeof specialFields>] ||
           {}
-      ).filter(
-        (index) =>
-          !manualIndexes.some((m) =>
-            Array.isArray(m) ? m[0] === index : m === index
-          )
-      );
-      return [key, manualIndexes.concat(specialFieldIndexes)];
+      )
+        .filter(
+          (field) =>
+            !manualIndexes.concat(schemaIndexes).some((m) => m[0] === field)
+        )
+        .map((field) => [field]);
+      const indexes: string[][] = [];
+      for (const index of [
+        ...manualIndexes,
+        ...specialFieldIndexes,
+        ...schemaIndexes,
+      ]) {
+        if (!indexes.some((i) => i.join("_") === index.join("_"))) {
+          indexes.push(index);
+        }
+      }
+      return [key, indexes];
     })
   );
 
@@ -164,10 +191,7 @@ export const tables = {
     }
 
     const indexes =
-      mergedIndexFields(tables)[
-        tableKey as keyof typeof mergedIndexFields
-      ]?.map((index) => {
-        const indexArray = Array.isArray(index) ? index.sort() : [index];
+      mergedIndexFields(tables)[tableKey]?.map((indexArray) => {
         const indexName = indexArray.join("_");
         return `.index("${indexName}", ${JSON.stringify(indexArray)})`;
       }) || [];
