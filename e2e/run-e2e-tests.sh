@@ -27,3 +27,10 @@ popd > /dev/null
 
 echo "Running Playwright tests..."
 npx playwright test --config "$SCRIPT_DIR/playwright.config.ts"
+
+pushd "$SCRIPT_DIR" > /dev/null
+bash "$SCRIPT_DIR/run-http-tests.sh"
+
+echo "Running schema generation regression tests..."
+node "$SCRIPT_DIR/schema-generation/collision.mjs"
+popd > /dev/null

@@ -7,3 +7,6 @@ convex-local-backend
 convex-local-backend.log
 convex_local_storage
 convex_local_backend.sqlite3
+
+# Generated when the E2E fixture is deployed.
+convex/**/_generated/

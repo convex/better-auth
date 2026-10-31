@@ -3,12 +3,25 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node backendHarness.js 'npm run testExistingBackend'",
+    "test": "node backendHarness.js 'npm run testExistingBackend' && node bundled-migration/run.mjs",
     "testExistingBackend": "./run-e2e-tests.sh"
   },
   "dependencies": {
+    "@better-auth/core": "1.7.7",
+    "@better-auth/mcp": "1.7.7",
+    "@better-auth/oauth-provider": "1.7.7",
+    "@convex-dev/better-auth": "file:..",
     "@playwright/test": "^1.60.0",
     "adm-zip": "^0.5.16",
-    "dotenv": "^17.0.0"
+    "better-auth": "1.7.7",
+    "better-call": "1.4.0",
+    "convex": "1.46.0",
+    "convex-helpers": "0.1.129",
+    "dotenv": "^17.0.0",
+    "jose": "^6.1.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.26.0",
+    "typescript": "5.9.3"
   }
 }

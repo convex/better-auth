@@ -1,10 +1,12 @@
 import { createTestSuite } from "@better-auth/test-utils/adapter";
 import { expect } from "vitest";
+import { getAtomicTests } from "./convex-custom-atomic.js";
+import { getConstraintTests } from "./convex-custom-constraints.js";
 
 export const convexCustomTestSuite = createTestSuite(
   "convex-custom",
   {},
-  ({ adapter }) => ({
+  ({ adapter, getBetterAuthOptions, modifyBetterAuthOptions }) => ({
     "should handle lone range operators": async () => {
       const user = await adapter.create({
         model: "user",
@@ -495,6 +497,8 @@ export const convexCustomTestSuite = createTestSuite(
         ).toMatchObject({ emailVerified: true });
       },
 
+    ...getConstraintTests(adapter),
+
     "should delete and count each match only once for overlapping OR clauses":
       async () => {
         await adapter.create({
@@ -589,6 +593,7 @@ export const convexCustomTestSuite = createTestSuite(
         await adapter.create({
           model: "account",
           data: {
+            issuer: "local:oauth:bar",
             accountId: "foo",
             providerId: "bar",
             userId: "baz",
@@ -626,6 +631,7 @@ export const convexCustomTestSuite = createTestSuite(
       const nullRangeAccount = await adapter.create({
         model: "account",
         data: {
+          issuer: "local:oauth:null-range-provider",
           accountId: nullRangeAccountId,
           providerId: "null-range-provider",
           userId: `null-range-user-${now}`,
@@ -638,6 +644,7 @@ export const convexCustomTestSuite = createTestSuite(
       const nonNullRangeAccount = await adapter.create({
         model: "account",
         data: {
+          issuer: "local:oauth:non-null-range-provider",
           accountId: nonNullRangeAccountId,
           providerId: "non-null-range-provider",
           userId: `non-null-range-user-${now}`,
@@ -737,10 +744,16 @@ export const convexCustomTestSuite = createTestSuite(
         await expect(
           adapter.create({
             model: "user",
-            data: { name: "foo", email: "foo@bar.com" },
-          }),
+            data: { name: "different name", email: "foo@bar.com" },
+          })
         ).rejects.toThrow("user email already exists");
       },
+
+    ...getAtomicTests({
+      adapter,
+      getBetterAuthOptions,
+      modifyBetterAuthOptions,
+    }),
 
     "should be able to compare against a date": async () => {
       const now = new Date().toISOString();

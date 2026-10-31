@@ -3,11 +3,12 @@ import { additionalFieldsProfileOptions } from "./auth-options.profile-additiona
 import schema from "./schema.profile-additional-fields.js";
 
 export const {
-	create,
-	findOne,
-	findMany,
-	updateOne,
-	updateMany,
-	deleteOne,
-	deleteMany,
+  create,
+  findOne,
+  findMany,
+  updateOne,
+  incrementOne,
+  updateMany,
+  deleteOne,
+  deleteMany,
 } = createApi(schema, () => additionalFieldsProfileOptions);

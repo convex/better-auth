@@ -3,9 +3,14 @@ import {
   paginationOptsValidator,
   queryGeneric,
 } from "convex/server";
-import type { FunctionHandle, SchemaDefinition } from "convex/server";
+import type {
+  FunctionHandle,
+  GenericDataModel,
+  GenericMutationCtx,
+  SchemaDefinition,
+} from "convex/server";
 import { v } from "convex/values";
-import type { GenericId } from "convex/values";
+import type { GenericId, GenericValidator } from "convex/values";
 import { asyncMap } from "convex-helpers";
 import { partial } from "convex-helpers/validators";
 import {
@@ -15,20 +20,38 @@ import {
   listOne,
   paginate,
   selectFields,
+  touchesUniqueFields,
 } from "./adapter-utils.js";
 import { getAuthTables } from "better-auth/db";
-import type { TableNames } from "../component/_generated/dataModel.js";
+import type { BetterAuthDBSchema } from "better-auth/db";
 import type { BetterAuthOptions } from "better-auth/minimal";
+
+// Enumerate declared paths instead of accepting arbitrary strings in write
+// guards: a typo combined with eq null must never become a broad mutation.
+const declaredFieldPaths = (
+  validator: GenericValidator,
+  prefix = ""
+): string[] => {
+  if (validator.kind === "union")
+    return validator.members.flatMap((member: GenericValidator) =>
+      declaredFieldPaths(member, prefix)
+    );
+  if (validator.kind !== "object") return [];
+  return Object.entries(validator.fields).flatMap(([field, child]) => {
+    const path = prefix ? `${prefix}.${field}` : field;
+    return [path, ...declaredFieldPaths(child as GenericValidator, path)];
+  });
+};
 
 const whereValidator = (
   schema: SchemaDefinition<any, any>,
-  tableName: TableNames
+  tableName: string
 ) =>
   v.object({
     field: v.union(
-      ...Object.keys(schema.tables[tableName].validator.fields).map((field) =>
-        v.literal(field)
-      ),
+      ...[
+        ...new Set(declaredFieldPaths(schema.tables[tableName].validator)),
+      ].map((field) => v.literal(field)),
       v.literal("_id")
     ),
     operator: v.optional(
@@ -58,11 +81,120 @@ const whereValidator = (
     mode: v.optional(v.union(v.literal("sensitive"), v.literal("insensitive"))),
   });
 
+const requiredFieldNames = (
+  betterAuthSchema: BetterAuthDBSchema,
+  model: string
+) => {
+  const table = Object.values(betterAuthSchema).find(
+    (value) => value.modelName === model
+  );
+  if (!table) {
+    return [];
+  }
+  return Object.entries(table.fields)
+    .filter(([, field]) => field.required)
+    .map(([fieldName, field]) => field.fieldName ?? fieldName);
+};
+
+const assertRequiredUpdateFields = (
+  betterAuthSchema: BetterAuthDBSchema,
+  model: string,
+  update: Record<string, unknown>
+) => {
+  for (const fieldName of requiredFieldNames(betterAuthSchema, model)) {
+    if (
+      Object.prototype.hasOwnProperty.call(update, fieldName) &&
+      update[fieldName] == null
+    ) {
+      throw new Error(`Cannot clear required field ${model}.${fieldName}`);
+    }
+  }
+};
+
+const assertRequiredFieldTransitions = (
+  betterAuthSchema: BetterAuthDBSchema,
+  model: string,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>
+) => {
+  for (const fieldName of requiredFieldNames(betterAuthSchema, model)) {
+    if (
+      after[fieldName] == null &&
+      (before[fieldName] != null ||
+        (!Object.prototype.hasOwnProperty.call(before, fieldName) &&
+          Object.prototype.hasOwnProperty.call(after, fieldName)))
+    ) {
+      throw new Error(`Trigger cleared required field ${model}.${fieldName}`);
+    }
+  }
+};
+
 export const createApi = <Schema extends SchemaDefinition<any, any>>(
   schema: Schema,
   createAuthOptions: (ctx: any) => BetterAuthOptions
 ) => {
+  type TableNames = Extract<keyof Schema["tables"], string>;
   const betterAuthSchema = getAuthTables(createAuthOptions({} as any));
+  const checkPersistedUniqueFields = async (
+    ctx: GenericMutationCtx<GenericDataModel>,
+    model: string,
+    doc: Record<string, any>
+  ) => {
+    await checkUniqueFields(ctx, schema, betterAuthSchema, model, doc, doc);
+  };
+  const readUpdatedDoc = async <Doc extends Record<string, any>>(
+    ctx: GenericMutationCtx<GenericDataModel>,
+    model: TableNames,
+    doc: Doc
+  ): Promise<Doc> => {
+    const updatedDoc = await ctx.db.get(
+      model,
+      doc._id as GenericId<TableNames>
+    );
+    if (!updatedDoc) throw new Error(`Failed to update ${model}`);
+    return updatedDoc as Doc;
+  };
+  const applyUpdate = async <Doc extends Record<string, any>>(
+    ctx: GenericMutationCtx<GenericDataModel>,
+    model: TableNames,
+    doc: Doc,
+    update: Record<string, any>,
+    onUpdateHandle?: string,
+    validateRequired = false
+  ): Promise<Doc | undefined> => {
+    if (validateRequired)
+      assertRequiredUpdateFields(betterAuthSchema, model, update);
+    await checkUniqueFields(ctx, schema, betterAuthSchema, model, update, doc);
+    await ctx.db.patch(model, doc._id as GenericId<TableNames>, update as any);
+    if (!onUpdateHandle) {
+      return;
+    }
+    const updatedDoc = await readUpdatedDoc(ctx, model, doc);
+    await ctx.runMutation(onUpdateHandle as FunctionHandle<"mutation">, {
+      model,
+      newDoc: updatedDoc,
+      oldDoc: doc,
+    });
+    const triggeredDoc = await ctx.db.get(
+      model,
+      doc._id as GenericId<TableNames>
+    );
+    if (!triggeredDoc) {
+      throw new Error(
+        `Failed to update ${model} (deleted by onUpdate trigger?)`
+      );
+    }
+    if (validateRequired)
+      assertRequiredFieldTransitions(
+        betterAuthSchema,
+        model,
+        updatedDoc,
+        triggeredDoc
+      );
+    await checkPersistedUniqueFields(ctx, model, triggeredDoc);
+    return triggeredDoc as Doc;
+  };
+
   return {
     create: mutationGeneric({
       args: {
@@ -108,6 +240,7 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
               `Failed to create ${args.input.model} (deleted by onCreate trigger?)`
             );
           }
+          await checkPersistedUniqueFields(ctx, args.input.model, updatedDoc);
           return selectFields(updatedDoc, args.select);
         }
         return result;
@@ -168,49 +301,87 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
       handler: async (ctx, args) => {
         const doc = await listOne(ctx, schema, betterAuthSchema, args.input);
         if (!doc) {
-          throw new Error(`Failed to update ${args.input.model}`);
+          return null;
         }
-        await checkUniqueFields(
+        return (
+          (await applyUpdate(
+            ctx,
+            args.input.model,
+            doc,
+            args.input.update,
+            args.onUpdateHandle
+          )) ?? (await readUpdatedDoc(ctx, args.input.model, doc))
+        );
+      },
+    }),
+    incrementOne: mutationGeneric({
+      args: {
+        input: v.union(
+          ...Object.entries(schema.tables).map(
+            ([name, table]: [string, Schema["tables"][string]]) => {
+              const tableName = name as TableNames;
+              return v.object({
+                model: v.literal(tableName),
+                where: v.array(whereValidator(schema, tableName)),
+                increment: v.record(v.string(), v.number()),
+                set: v.optional(v.object(partial(table.validator.fields))),
+              });
+            }
+          )
+        ),
+        onUpdateHandle: v.optional(v.string()),
+      },
+      handler: async (ctx, args) => {
+        if (!args.input.where.length) {
+          return null;
+        }
+        const doc = await listOne(
           ctx,
           schema,
           betterAuthSchema,
-          args.input.model,
-          args.input.update,
-          doc
+          args.input,
+          true
         );
-        await ctx.db.patch(
-          args.input.model,
-          doc._id as GenericId<TableNames>,
-          args.input.update as any
-        );
-        const updatedDoc = await ctx.db.get(
-          args.input.model,
-          doc._id as GenericId<TableNames>
-        );
-        if (!updatedDoc) {
-          throw new Error(`Failed to update ${args.input.model}`);
+        if (!doc) {
+          return null;
         }
-        if (args.onUpdateHandle) {
-          await ctx.runMutation(
-            args.onUpdateHandle as FunctionHandle<"mutation">,
-            {
-              model: args.input.model,
-              newDoc: updatedDoc,
-              oldDoc: doc,
-            }
-          );
-          const innerUpdatedDoc = await ctx.db.get(
-            args.input.model,
-            doc._id as GenericId<TableNames>
-          );
-          if (!innerUpdatedDoc) {
+
+        const update: Record<string, unknown> = { ...args.input.set };
+        for (const [field, delta] of Object.entries(args.input.increment)) {
+          const current = doc[field];
+          if (
+            current !== undefined &&
+            current !== null &&
+            typeof current !== "number"
+          ) {
             throw new Error(
-              `Failed to update ${args.input.model} (deleted by onUpdate trigger?)`
+              `Cannot increment non-numeric field ${args.input.model}.${field}`
             );
           }
-          return innerUpdatedDoc;
+          const previous = current ?? 0;
+          const next = previous + delta;
+          if (
+            !Number.isFinite(previous) ||
+            !Number.isFinite(delta) ||
+            !Number.isFinite(next) ||
+            (delta !== 0 && next === previous)
+          ) {
+            throw new Error(
+              `Cannot safely increment field ${args.input.model}.${field}`
+            );
+          }
+          update[field] = next;
         }
-        return updatedDoc;
+        return (
+          (await applyUpdate(
+            ctx,
+            args.input.model,
+            doc,
+            update,
+            args.onUpdateHandle,
+            true
+          )) ?? (await readUpdatedDoc(ctx, args.input.model, doc))
+        );
       },
     }),
     updateMany: mutationGeneric({
@@ -232,16 +403,40 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
         onUpdateHandle: v.optional(v.string()),
       },
       handler: async (ctx, args) => {
+        const uniqueFieldsTouched = touchesUniqueFields(
+          betterAuthSchema,
+          args.input.model,
+          args.input.update ?? {}
+        );
+        const firstInWhere = args.input.where?.find(
+          (where) => where.operator === "in"
+        );
+        const usesAtomicIdSet = firstInWhere?.field === "_id";
+        const requestedPageSize = args.paginationOpts.numItems;
         const { page, ...result } = await paginate(
           ctx,
           schema,
           betterAuthSchema,
           {
             ...args.input,
-            paginationOpts: args.paginationOpts,
+            paginationOpts: uniqueFieldsTouched
+              ? {
+                  ...args.paginationOpts,
+                  numItems: requestedPageSize + 1,
+                }
+              : args.paginationOpts,
           }
         );
         if (args.input.update) {
+          if (
+            uniqueFieldsTouched &&
+            !usesAtomicIdSet &&
+            (page.length > requestedPageSize || !result.isDone)
+          ) {
+            throw new Error(
+              `Cannot update unique fields across multiple pages in ${args.input.model}`
+            );
+          }
           if (
             hasUniqueFields(
               betterAuthSchema,
@@ -254,35 +449,21 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
               `Attempted to set unique fields in multiple documents in ${args.input.model} with the same value. Fields: ${Object.keys(args.input.update ?? {}).join(", ")}`
             );
           }
-          await asyncMap(page, async (doc) => {
-            await checkUniqueFields(
+          const updateDoc = (doc: (typeof page)[number]) =>
+            applyUpdate(
               ctx,
-              schema,
-              betterAuthSchema,
               args.input.model,
+              doc,
               args.input.update ?? {},
-              doc
+              args.onUpdateHandle
             );
-            await ctx.db.patch(
-              args.input.model,
-              doc._id as GenericId<TableNames>,
-              args.input.update as any
-            );
-
-            if (args.onUpdateHandle) {
-              await ctx.runMutation(
-                args.onUpdateHandle as FunctionHandle<"mutation">,
-                {
-                  model: args.input.model,
-                  newDoc: await ctx.db.get(
-                    args.input.model,
-                    doc._id as GenericId<TableNames>
-                  ),
-                  oldDoc: doc,
-                }
-              );
+          if (uniqueFieldsTouched) {
+            for (const doc of page) {
+              await updateDoc(doc);
             }
-          });
+          } else {
+            await asyncMap(page, updateDoc);
+          }
         }
         return {
           ...result,

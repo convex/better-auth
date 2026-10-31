@@ -1,3 +1,5 @@
+import bundledSchema from "../component/schema.js";
+import type { GenericCtx } from "../utils/index.js";
 /// <reference types="vite/client" />
 
 import { describe, it } from "vitest";
@@ -24,6 +26,8 @@ import {
   renameModelUserCustomTestSuite,
   renameModelUserTableTestSuite,
 } from "../test/adapter-factory/index.js";
+
+import { constraintsProfileOptions } from "../component/testProfiles/auth-options.constraints.js";
 
 const MIN_NODE_MAJOR = 24;
 const currentNodeMajor = Number.parseInt(
@@ -91,6 +95,7 @@ const getOverrideBetterAuthOptions = (
 
 type AdapterModule = ComponentApi["adapter"];
 type TestProfileName =
+  | "adapterConstraints"
   | "adapterAdditionalFields"
   | "adapterPluginTable"
   | "adapterRenameField"
@@ -126,6 +131,14 @@ if (currentNodeMajor < MIN_NODE_MAJOR) {
       adapter: internalWithTestProfiles.testProfiles[name],
     });
 
+    const bundled = convexTest(
+      bundledSchema,
+      import.meta.glob("../component/**/*.*s")
+    );
+    const bundledCtx = {
+      runQuery: bundled.query.bind(bundled),
+      runMutation: bundled.mutation.bind(bundled),
+    } as GenericCtx<DataModel>;
     const baseProfileClient = createClient<DataModel>(
       { adapter: internalWithTestProfiles.adapter },
       { verbose: false }
@@ -160,7 +173,7 @@ if (currentNodeMajor < MIN_NODE_MAJOR) {
     };
 
     const { execute: executeBaseProfile } = await testAdapter({
-      adapter: () => baseProfileClient.adapter(wrappedCtx),
+      adapter: () => baseProfileClient.adapter(bundledCtx),
       runMigrations: noMigrations,
       overrideBetterAuthOptions: getOverrideBetterAuthOptions,
       tests: [
@@ -169,8 +182,26 @@ if (currentNodeMajor < MIN_NODE_MAJOR) {
         }),
         transactionsTestSuite({ disableTests: { ALL: true } }),
         coreAuthFlowTestSuite(),
-        convexCustomTestSuite(),
       ],
+    });
+
+    const constraintsProfileClient = createClient<DataModel>(
+      profileApi("adapterConstraints"),
+      { verbose: false }
+    );
+    const { execute: executeConstraintsProfile } = await testAdapter({
+      adapter: () => constraintsProfileClient.adapter(wrappedCtx),
+      runMigrations: noMigrations,
+      overrideBetterAuthOptions: (opts) =>
+        getOverrideBetterAuthOptions({
+          ...opts,
+          plugins: [
+            ...(opts.plugins ?? []),
+            ...constraintsProfileOptions.plugins,
+          ],
+        }),
+      prefixTests: "profile:custom-constraints",
+      tests: [convexCustomTestSuite()],
     });
 
     const { execute: executeAdditionalFieldsProfile } = await testAdapter({
@@ -225,6 +256,7 @@ if (currentNodeMajor < MIN_NODE_MAJOR) {
     });
 
     executeBaseProfile();
+    executeConstraintsProfile();
     executeAdditionalFieldsProfile();
     executePluginTableProfile();
     executeRenameFieldProfile();

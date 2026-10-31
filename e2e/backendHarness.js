@@ -1,11 +1,12 @@
 // Run a command against a fresh local backend, handling setup and teardown.
+// Usage: node backendHarness.js <command>
 // Downloads the latest prebuilt Convex local backend binary if needed.
 //
 // Adapted from https://github.com/get-convex/convex-auth/blob/main/test-nextjs/backendHarness.js
 
 import http from "node:http";
 import fsPromises from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import crypto from "node:crypto";
 import { existsSync, unlinkSync, rmSync, chmodSync } from "node:fs";
 import { Readable } from "node:stream";
@@ -58,11 +59,14 @@ const waitForLocalBackendRunning = async (backendUrl) => {
     }
     await sleep(500);
     isRunning = await isBackendRunning(backendUrl);
-    const isDead = backendProcess.exitCode !== null;
+    const isDead =
+      backendProcess.exitCode !== null || backendProcess.signalCode !== null;
     if (isDead) {
       throw new Error("Backend exited unexpectedly");
     }
     i += 1;
+    if (i >= 120)
+      throw new Error("Local backend did not start within 60 seconds");
   }
 };
 
@@ -100,7 +104,7 @@ function getDownloadPath() {
 async function downloadAndStartBackend() {
   const latest = await fetch(
     "https://github.com/convex/convex-backend/releases/latest",
-    { redirect: "manual" },
+    { redirect: "manual" }
   );
   if (latest.status !== 302) {
     throw new Error(`Error fetching latest release: ${latest.status}`);
@@ -111,11 +115,11 @@ async function downloadAndStartBackend() {
   const downloadPath = getDownloadPath();
   if (!downloadPath) {
     throw new Error(
-      `Unsupported platform: ${process.platform} ${process.arch}`,
+      `Unsupported platform: ${process.platform} ${process.arch}`
     );
   }
   const response = await fetch(
-    `https://github.com/convex/convex-backend/releases/download/${version}/${downloadPath}`,
+    `https://github.com/convex/convex-backend/releases/download/${version}/${downloadPath}`
   );
 
   const zipLocation = "convex-backend.zip";
@@ -136,27 +140,30 @@ async function downloadAndStartBackend() {
   zip.extractAllTo(".", true);
   const binaryPath = "./convex-local-backend";
   chmodSync(binaryPath, 0o755);
-
   const instanceName = "anonymous-convex-better-auth-e2e";
   const instanceSecret = crypto.randomBytes(32).toString("hex");
-  const keyResponse = await fetch(
-    "https://api.convex.dev/api/local_deployment/generate_admin_key",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ instanceName, instanceSecret }),
-    },
-  );
-  if (!keyResponse.ok) {
+  let adminKey;
+  try {
+    adminKey = execFileSync(
+      binaryPath,
+      [
+        "keygen",
+        "admin-key",
+        "--instance-name",
+        instanceName,
+        "--instance-secret",
+        instanceSecret,
+      ],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
+    ).trim();
+  } catch {
+    // Do not include the command or stderr: either may contain the secret.
     throw new Error(
-      `Failed to generate admin key: ${keyResponse.status} ${await keyResponse.text()}`,
+      "Failed to generate a local admin key. Use a backend binary that supports keygen admin-key."
     );
   }
-  const { adminKey } = await keyResponse.json();
-  if (typeof adminKey !== "string" || adminKey.length === 0) {
-    throw new Error(
-      "Provisioning response did not include a valid adminKey",
-    );
+  if (adminKey.length === 0) {
+    throw new Error("Local key generation did not return an admin key");
   }
 
   const process_ = spawn(
@@ -167,7 +174,7 @@ async function downloadAndStartBackend() {
       "--instance-name", instanceName,
       "--instance-secret", instanceSecret,
     ],
-    { env: { CONVEX_TRACE_FILE: "1" } },
+    { env: { CONVEX_TRACE_FILE: "1", DISABLE_BEACON: "true" } },
   );
   return { process: process_, adminKey };
 }
@@ -197,7 +204,12 @@ async function runWithLocalBackend(command, backendUrl) {
     const c = spawn(command, {
       shell: true,
       stdio: "pipe",
-      env: { ...process.env, FORCE_COLOR: "1", CONVEX_ADMIN_KEY: adminKey },
+      env: {
+        ...process.env,
+        FORCE_COLOR: "1",
+        CONVEX_ADMIN_KEY: adminKey,
+        CONVEX_TEST_BACKEND_URL: backendUrl.origin,
+      },
     });
     c.stdout.on("data", (data) => {
       process.stdout.write(data);

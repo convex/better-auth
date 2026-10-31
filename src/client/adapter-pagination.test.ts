@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { convexTest } from "convex-test";
 import type { BetterAuthOptions } from "better-auth";
 import { api } from "../component/_generated/api.js";
-import schema from "../component/testProfiles/schema.profile-plugin-table.js";
+import schema from "../component/schema.js";
 import { createClient } from "./index.js";
 import type { DataModel } from "../component/_generated/dataModel.js";
 

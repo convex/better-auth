@@ -8,27 +8,11 @@ import {
 import { bearer as bearerPlugin } from "better-auth/plugins/bearer";
 import { jwt as jwtPlugin } from "better-auth/plugins/jwt";
 import type { JwtOptions, Jwk } from "better-auth/plugins/jwt";
-import { oidcProvider as oidcProviderPlugin } from "better-auth/plugins/oidc-provider";
 import { omit } from "convex-helpers";
 import type { AuthConfig, AuthProvider } from "convex/server";
 import { VERSION } from "../../version.js";
 
 export const JWT_COOKIE_NAME = "convex_jwt";
-
-type BetterAuthAfterHooks = NonNullable<
-  NonNullable<BetterAuthPlugin["hooks"]>["after"]
->;
-type BetterAuthAfterHook = BetterAuthAfterHooks[number];
-type BetterAuthHookContext = Parameters<BetterAuthAfterHook["matcher"]>[0];
-
-const normalizeAfterHooks = <THook extends BetterAuthAfterHook>(
-  hooks: THook[]
-): BetterAuthAfterHooks => {
-  return hooks.map((hook) => ({
-    ...hook,
-    matcher: (ctx: BetterAuthHookContext) => Boolean(hook.matcher(ctx)),
-  }));
-};
 
 const getJwksAlg = (authProvider: AuthProvider) => {
   const isCustomJwt =
@@ -170,20 +154,12 @@ export const convex = (opts: {
   jwksRotateOnTokenGenerationError?: boolean;
   /**
    * @param {BetterAuthOptions} options - Better Auth options. Not required,
-   * currently used to pass the basePath to the oidcProvider plugin.
+   * currently used to keep discovery metadata aligned with the basePath.
    */
   options?: BetterAuthOptions;
 }) => {
   const jwtExpirationSeconds =
     opts.jwt?.expirationSeconds ?? opts.jwtExpirationSeconds ?? 60 * 15;
-  const oidcProvider = oidcProviderPlugin({
-    loginPage: "/not-used",
-    metadata: {
-      issuer: `${process.env.CONVEX_SITE_URL}`,
-      jwks_uri: `${process.env.CONVEX_SITE_URL}${opts.options?.basePath ?? "/api/auth"}/convex/jwks`,
-    },
-    __skipDeprecationWarning: true,
-  });
   const providerConfig = parseAuthConfig(opts.authConfig, opts);
 
   const jwtOptions = {
@@ -304,30 +280,37 @@ export const convex = (opts: {
                 return 0;
               };
             };
+            const noopAtomicWrite = (method: string) => {
+              const warn = noopWrite(method);
+              return async (...args: any[]) => {
+                await warn(...args);
+                return null;
+              };
+            };
             ctx.context.adapter.create = noopWrite("create") as any;
             ctx.context.adapter.update = noopWrite("update") as any;
             ctx.context.adapter.updateMany = noopWrite("updateMany") as any;
             ctx.context.adapter.delete = noopWrite("delete") as any;
             ctx.context.adapter.deleteMany = noopWrite("deleteMany") as any;
+            ctx.context.adapter.consumeOne = noopAtomicWrite("consumeOne");
+            ctx.context.adapter.incrementOne = noopAtomicWrite("incrementOne");
             return { context: ctx };
           }),
         },
       ],
       after: [
-        ...normalizeAfterHooks(oidcProvider.hooks.after),
         {
           matcher: (ctx) => {
             return Boolean(
               ctx.path?.startsWith("/sign-in") ||
-                ctx.path?.startsWith("/sign-up") ||
-                ctx.path?.startsWith("/callback") ||
-                ctx.path?.startsWith("/oauth2/callback") ||
-                ctx.path?.startsWith("/magic-link/verify") ||
-                ctx.path?.startsWith("/email-otp/verify-email") ||
-                ctx.path?.startsWith("/phone-number/verify") ||
-                ctx.path?.startsWith("/siwe/verify") ||
-                ctx.path?.startsWith("/update-session") ||
-                (ctx.path?.startsWith("/get-session") && ctx.context.session)
+              ctx.path?.startsWith("/sign-up") ||
+              ctx.path?.startsWith("/callback") ||
+              ctx.path?.startsWith("/magic-link/verify") ||
+              ctx.path?.startsWith("/email-otp/verify-email") ||
+              ctx.path?.startsWith("/phone-number/verify") ||
+              ctx.path?.startsWith("/siwe/verify") ||
+              ctx.path?.startsWith("/update-session") ||
+              (ctx.path?.startsWith("/get-session") && ctx.context.session)
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
@@ -338,7 +321,7 @@ export const convex = (opts: {
                 ctx.context.session ?? ctx.context.newSession;
               const { token } = await jwt.endpoints.getToken({
                 ...ctx,
-                headers: {},
+                headers: new Headers(),
                 method: "GET",
                 asResponse: false,
                 returnHeaders: false,
@@ -360,8 +343,8 @@ export const convex = (opts: {
           matcher: (ctx) => {
             return Boolean(
               ctx.path?.startsWith("/sign-out") ||
-                ctx.path?.startsWith("/delete-user") ||
-                (ctx.path?.startsWith("/get-session") && !ctx.context.session)
+              ctx.path?.startsWith("/delete-user") ||
+              (ctx.path?.startsWith("/get-session") && !ctx.context.session)
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
@@ -383,14 +366,24 @@ export const convex = (opts: {
           },
           // TODO: properly type this
         },
-        async (ctx) => {
-          const response = await oidcProvider.endpoints.getOpenIdConfig({
-            ...ctx,
-            asResponse: false,
-            returnHeaders: false,
-            returnStatus: false,
-          });
-          return response;
+        async (_ctx) => {
+          const issuer = `${process.env.CONVEX_SITE_URL}`;
+          return {
+            issuer,
+            jwks_uri: `${issuer}${opts.options?.basePath ?? "/api/auth"}/convex/jwks`,
+            id_token_signing_alg_values_supported: [getJwksAlg(providerConfig)],
+            claims_supported: [
+              "sub",
+              "iss",
+              "aud",
+              "exp",
+              "iat",
+              "email",
+              "email_verified",
+              "name",
+              "picture",
+            ],
+          };
         }
       ),
       getJwks: createAuthEndpoint(

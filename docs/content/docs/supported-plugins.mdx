@@ -5,12 +5,7 @@ description: Supported plugins for Convex + Better Auth
 
 ## Supported plugins
 
-Any Better Auth plugin may be used with Convex + Better Auth, but only a subset
-are considered supported for the integration. Convex + Better Auth works out of
-the box for these without any required schema changes.
-
-For plugins that require schema changes and aren't in the list, check out [Local
-Install](/local-install).
+These plugins are supported by Convex + Better Auth without schema changes.
 
 - [Anonymous](https://www.better-auth.com/docs/plugins/anonymous)
 - [Email OTP](https://www.better-auth.com/docs/plugins/email-otp)
@@ -22,9 +17,22 @@ Install](/local-install).
 - [Two Factor](https://www.better-auth.com/docs/plugins/2fa)
 - [Username](https://www.better-auth.com/docs/plugins/username)
 
+### Local Install plugins
+
+Schema-changing plugins that are not bundled with the component require
+[Local Install](/local-install). This includes the
+[`@better-auth/oauth-provider`](https://www.better-auth.com/docs/plugins/oauth-provider)
+package used when your application acts as an OAuth or OIDC provider.
+
+Local Install does not add adapter capabilities required by a plugin.
+
 ### Incompatible plugins
 
 Official Better Auth plugins that are incompatible with Convex + Better Auth
 (even when Local Install is used):
 
-- [SSO](https://www.better-auth.com/docs/plugins/sso) - has direct dependencies on Node.js
+- [SSO](https://www.better-auth.com/docs/plugins/sso) - has direct dependencies
+  on Node.js
+- [SCIM](https://www.better-auth.com/docs/plugins/scim) - requires native
+  interactive adapter transactions in Better Auth 1.7, which the Convex adapter
+  does not provide.

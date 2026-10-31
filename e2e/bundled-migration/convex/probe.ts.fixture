@@ -1,0 +1,61 @@
+import {
+  mutationGeneric as mutation,
+  queryGeneric as query,
+} from "convex/server";
+import { v } from "convex/values";
+import { components } from "./_generated/api";
+export const write = mutation({
+  args: {
+    operation: v.string(),
+    args: v.any(),
+    empty: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { operation, args, empty }) => {
+    const component = (
+      empty ? components.emptyAuth : components.bundledAuth
+    ) as any;
+    switch (operation) {
+      case "seed":
+        return ctx.runMutation(component.verification.seed, args);
+      case "seedLarge":
+        return ctx.runMutation(component.verification.seedLarge, args);
+      case "create":
+        return ctx.runMutation(component.adapter.create, args);
+      case "updateOne":
+        return ctx.runMutation(component.adapter.updateOne, args);
+      case "deleteOne":
+        return ctx.runMutation(component.adapter.deleteOne, args);
+      case "deleteMany":
+        return ctx.runMutation(component.adapter.deleteMany, args);
+      default:
+        throw new Error("Unknown operation");
+    }
+  },
+});
+export const read = query({
+  args: {
+    operation: v.string(),
+    args: v.any(),
+    empty: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { operation, args, empty }) => {
+    const component = (
+      empty ? components.emptyAuth : components.bundledAuth
+    ) as any;
+    switch (operation) {
+      case "inspect":
+        return ctx.runQuery(component.verification.inspect, args);
+      case "legacyExport":
+        return ctx.runQuery(
+          component.migrations.listLegacyOAuthApplications,
+          args
+        );
+      case "findMany":
+        return ctx.runQuery(component.adapter.findMany, args);
+      case "findOne":
+        return ctx.runQuery(component.adapter.findOne, args);
+      default:
+        throw new Error("Unknown operation");
+    }
+  },
+});

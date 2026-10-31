@@ -33,6 +33,8 @@ describe("forwarded host restore with dynamic baseURL", async () => {
       fallback: `https://${APP_HOST}`,
     },
     basePath: "/api/auth",
+    // Better Auth 1.7 requires explicit proxy-header trust in this proxy fixture.
+    advanced: { trustedProxyHeaders: true },
     secret: "test-secret-at-least-thirty-two-characters-long",
     database: memoryAdapter(db),
     logger: { disabled: true },

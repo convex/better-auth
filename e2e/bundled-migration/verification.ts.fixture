@@ -1,0 +1,27 @@
+import {
+  mutationGeneric as mutation,
+  queryGeneric as query,
+} from "convex/server";
+import { v } from "convex/values";
+export const seed = mutation({
+  args: { rows: v.array(v.any()), model: v.optional(v.string()) },
+  handler: async (ctx, { rows, model }) => {
+    for (const row of rows) await ctx.db.insert(model ?? "user", row);
+  },
+});
+export const inspect = query({
+  args: { model: v.string() },
+  handler: (ctx, { model }) => ctx.db.query(model).collect(),
+});
+export const seedLarge = mutation({
+  args: { bytes: v.number(), name: v.string() },
+  handler: async (ctx, { bytes, name }) =>
+    ctx.db.insert("user", {
+      name,
+      email: `${name}@example.com`,
+      emailVerified: false,
+      createdAt: 0,
+      updatedAt: 0,
+      username: "x".repeat(bytes),
+    }),
+});

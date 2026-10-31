@@ -129,8 +129,8 @@ const createTestAuth = (siteUrl: string) => {
   // Start an OAuth flow, then simulate the provider redirecting the browser
   // back to the callback. No cookies: the state is looked up in the database.
   const completeOAuth = async (callbackURL?: string) => {
-    const start = await post("/sign-in/oauth2", {
-      providerId: PROVIDER_ID,
+    const start = await post("/sign-in/social", {
+      provider: PROVIDER_ID,
       disableRedirect: true,
       ...(callbackURL ? { callbackURL } : {}),
     });
@@ -139,7 +139,7 @@ const createTestAuth = (siteUrl: string) => {
     const state = new URL(url).searchParams.get("state");
     expect(state).toBeTruthy();
     const callback = new URL(
-      `${AUTH_BASE_URL}${BASE_PATH}/oauth2/callback/${PROVIDER_ID}`
+      `${AUTH_BASE_URL}${BASE_PATH}/callback/${PROVIDER_ID}`
     );
     callback.searchParams.set("code", "test-authorization-code");
     callback.searchParams.set("state", state!);
@@ -264,31 +264,31 @@ describe("crossDomain plugin", async () => {
     });
   });
 
-  describe("callbackURL defaulting for oauth2", () => {
+  describe("callbackURL defaulting for generic OAuth", () => {
     it("injects siteUrl when callbackURL is absent", async () => {
-      const response = await post("/sign-in/oauth2", {
-        providerId: PROVIDER_ID,
+      const response = await post("/sign-in/social", {
+        provider: "example-oauth",
         disableRedirect: true,
       });
       const { url } = (await response.json()) as { url: string };
       const state = new URL(url).searchParams.get("state");
       const verification = db.verification.find(
-        (entry) => entry.identifier === state
+        (entry) => entry.identifier === `auth-state:${state}`
       );
       expect(verification).toBeDefined();
       expect(JSON.parse(verification!.value).callbackURL).toBe(SITE_URL);
     });
 
     it("rewrites relative callbackURL to absolute using siteUrl", async () => {
-      const response = await post("/sign-in/oauth2", {
-        providerId: PROVIDER_ID,
+      const response = await post("/sign-in/social", {
+        provider: "example-oauth",
         callbackURL: "/dashboard",
         disableRedirect: true,
       });
       const { url } = (await response.json()) as { url: string };
       const state = new URL(url).searchParams.get("state");
       const verification = db.verification.find(
-        (entry) => entry.identifier === state
+        (entry) => entry.identifier === `auth-state:${state}`
       );
       expect(verification).toBeDefined();
       expect(JSON.parse(verification!.value).callbackURL).toBe(

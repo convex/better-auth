@@ -46,7 +46,7 @@ export default function EnableTwoFactor({ onBack }: { onBack: () => void }) {
       const { data } = await authClient.twoFactor.enable({
         password,
       })
-      if (data?.totpURI) {
+      if (data?.method === 'totp') {
         setTotpUri(data.totpURI)
         if (data.backupCodes) {
           setBackupCodes(data.backupCodes)

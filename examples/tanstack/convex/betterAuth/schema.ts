@@ -3,15 +3,15 @@
  * To regenerate the schema, from your project root:
  *
  *   cd convex/betterAuth
- *   npx auth generate
+ *   npx auth generate --output schema.ts
  *
  * To customize the schema, generate to an alternate file and import
  * the table definitions to your schema file. See
  * https://labs.convex.dev/better-auth/features/local-install#adding-custom-indexes.
  */
 
-import { defineSchema, defineTable } from "convex/server";
-import { v } from "convex/values";
+import { defineSchema, defineTable } from 'convex/server'
+import { v } from 'convex/values'
 
 export const tables = {
   user: defineTable({
@@ -26,9 +26,9 @@ export const tables = {
     userId: v.optional(v.union(v.null(), v.string())),
     foo: v.optional(v.union(v.null(), v.string())),
   })
-    .index("email_name", ["email","name"])
-    .index("name", ["name"])
-    .index("userId", ["userId"]),
+    .index('email_name', ['email', 'name'])
+    .index('name', ['name'])
+    .index('userId', ['userId']),
   session: defineTable({
     expiresAt: v.number(),
     token: v.string(),
@@ -38,10 +38,10 @@ export const tables = {
     userAgent: v.optional(v.union(v.null(), v.string())),
     userId: v.string(),
   })
-    .index("expiresAt", ["expiresAt"])
-    .index("expiresAt_userId", ["expiresAt","userId"])
-    .index("token", ["token"])
-    .index("userId", ["userId"]),
+    .index('expiresAt', ['expiresAt'])
+    .index('expiresAt_userId', ['expiresAt', 'userId'])
+    .index('token', ['token'])
+    .index('userId', ['userId']),
   account: defineTable({
     accountId: v.string(),
     providerId: v.string(),
@@ -56,10 +56,11 @@ export const tables = {
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("accountId", ["accountId"])
-    .index("accountId_providerId", ["accountId","providerId"])
-    .index("providerId_userId", ["providerId","userId"])
-    .index("userId", ["userId"]),
+    .index('accountId', ['accountId'])
+    .index('accountId_providerId', ['accountId', 'providerId'])
+    .index('providerId_userId', ['providerId', 'userId'])
+    .index('userId_providerId_accountId', ['userId', 'providerId', 'accountId'])
+    .index('userId', ['userId']),
   verification: defineTable({
     identifier: v.string(),
     value: v.string(),
@@ -67,23 +68,26 @@ export const tables = {
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("expiresAt", ["expiresAt"])
-    .index("identifier", ["identifier"]),
+    .index('expiresAt', ['expiresAt'])
+    .index('identifier', ['identifier']),
   twoFactor: defineTable({
     secret: v.string(),
     backupCodes: v.string(),
     userId: v.string(),
     verified: v.optional(v.union(v.null(), v.boolean())),
-  })
-    .index("userId", ["userId"]),
+    failedVerificationCount: v.optional(v.union(v.null(), v.number())),
+    lockedUntil: v.optional(v.union(v.null(), v.number())),
+  }).index('userId', ['userId']),
   jwks: defineTable({
     publicKey: v.string(),
     privateKey: v.string(),
     createdAt: v.number(),
     expiresAt: v.optional(v.union(v.null(), v.number())),
+    alg: v.optional(v.union(v.null(), v.string())),
+    crv: v.optional(v.union(v.null(), v.string())),
   }),
-};
+}
 
-const schema = defineSchema(tables);
+const schema = defineSchema(tables)
 
-export default schema;
+export default schema

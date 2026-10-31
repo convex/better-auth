@@ -9,7 +9,9 @@
  */
 
 import type * as adapter from "../adapter.js";
+import type * as migrations from "../migrations.js";
 import type * as testProfiles_adapterAdditionalFields from "../testProfiles/adapterAdditionalFields.js";
+import type * as testProfiles_adapterConstraints from "../testProfiles/adapterConstraints.js";
 import type * as testProfiles_adapterOrganizationJoins from "../testProfiles/adapterOrganizationJoins.js";
 import type * as testProfiles_adapterPluginTable from "../testProfiles/adapterPluginTable.js";
 import type * as testProfiles_adapterRenameField from "../testProfiles/adapterRenameField.js";
@@ -26,7 +28,9 @@ import { anyApi, componentsGeneric } from "convex/server";
 
 const fullApi: ApiFromModules<{
   adapter: typeof adapter;
+  migrations: typeof migrations;
   "testProfiles/adapterAdditionalFields": typeof testProfiles_adapterAdditionalFields;
+  "testProfiles/adapterConstraints": typeof testProfiles_adapterConstraints;
   "testProfiles/adapterOrganizationJoins": typeof testProfiles_adapterOrganizationJoins;
   "testProfiles/adapterPluginTable": typeof testProfiles_adapterPluginTable;
   "testProfiles/adapterRenameField": typeof testProfiles_adapterRenameField;

@@ -1,0 +1,330 @@
+---
+title: Migrate to Better Auth 1.7
+description: Upgrade the Convex component to support Better Auth 1.7
+---
+
+## Upgrade
+
+<div className="fd-steps">
+
+  <div className="fd-step">
+
+### Install dependencies
+
+Update Better Auth and install a component release that supports Better Auth
+1.7. Better Auth must be on `1.7.7` or later in the `1.7.x` line. Update any
+installed `@better-auth/*` packages together. Convex must be `1.46.0` or later.
+Upgrade the SDK before deploying the component. Once a compatible component
+release is available, install it and update Better Auth:
+
+```npm
+npm install @convex-dev/better-auth
+npm install better-auth@~1.7.7 convex@^1.46.0
+```
+
+<Callout>
+  Review the [Better Auth 1.7 upgrade
+  guide](https://www.better-auth.com/docs/guides/1-7-upgrade-guide) and [1.7.7
+  release notes](https://github.com/better-auth/better-auth/releases/tag/v1.7.7)
+  for the features your app uses.
+</Callout>
+
+  </div>
+
+  <div className="fd-step">
+
+### Check existing accounts
+
+Accounts still use `(providerId, accountId)`, as in 1.6. Check for duplicate
+pairs before upgrading. Better Auth now rejects ambiguous account lookups.
+Resolve duplicates using trusted provider data and keep different users
+separate. Credential accounts should have `accountId` equal to `userId`.
+
+Microsoft accounts have a separate migration described below.
+
+  </div>
+
+  <div className="fd-step">
+
+### Deploy and test
+
+Back up your data and test the upgrade on a development deployment first. If
+your app uses `oidcProvider` as an identity provider, follow the staged
+[provider conversion](#oauth-or-oidc-provider) before deploying the final
+application. Otherwise, regenerate Convex bindings and deploy the component and
+application changes together. Verify sign-in, existing sessions, account
+linking, token refresh, and `/api/auth/convex/jwks` for the features you use.
+
+Upgrade servers sharing verification storage and OAuth Proxy participants
+together. Request fresh Magic Links and restart pending OAuth/SAML sign-ins
+after deploying, as required by the 1.7.7 security fixes.
+
+  </div>
+
+</div>
+
+## Breaking changes
+
+<div className="fd-steps">
+
+  <div className="fd-step">
+
+### Pagination cursors
+
+Adapter pagination cursors are now versioned. Cursors issued by older versions
+are rejected with `BETTER_AUTH_PAGINATION_RESTART_REQUIRED`. On this error,
+discard previously accumulated read results and restart with `cursor: null`.
+Treat `continueCursor` and `splitCursor` as opaque values, and pass a versioned
+cursor when using `endCursor` to refresh a page.
+
+Drain paginated mutation jobs before deploying. Do not automatically replay a
+partially completed write operation after a cursor-version error: earlier pages
+and their triggers may already have committed. Inspect its progress first.
+
+  </div>
+
+  <div className="fd-step">
+
+### Better Auth changes
+
+Review the
+[Better Auth 1.7 upgrade guide](https://www.better-auth.com/docs/guides/1-7-upgrade-guide)
+for account selectors, Generic OAuth, Microsoft account identifiers, database
+joins, Expo, and two-factor authentication.
+
+For Convex apps, also check the following:
+
+- Generic OAuth callbacks move from `/api/auth/oauth2/callback/:id` to
+  `/api/auth/callback/:id`. Update provider settings before restoring sign-in.
+  PKCE is enabled by default; review custom account identity mapping and use an
+  immutable provider identifier.
+- Microsoft account IDs change from `sub` to `oid`. Pause Microsoft sign-in and
+  linking while mapping existing IDs from trusted provider data; the old account
+  row cannot supply this mapping.
+- The Convex adapter continues to use relation queries instead of native
+  database joins.
+- Await the Expo client's `getCookie()`; custom storage must implement
+  `getItem`, `getItemAsync`, `setItem`, and `setItemAsync`.
+- Check the returned `method` before reading `totpURI` or backup codes from
+  `enableTwoFactor`.
+
+</div>
+
+</div>
+
+## OAuth or OIDC provider
+
+The conversion below is for apps that used `oidcProvider` to act as an identity
+provider. Apps that only sign in through an external provider can skip it.
+
+If you already use `@better-auth/oauth-provider` with Local Install, follow the
+upstream
+[OAuth client migration](https://www.better-auth.com/docs/guides/1-7-upgrade-guide#migrate-oauth-client-records)
+before applying the generated schema. Existing clients need field backfills and
+configuration changes. Schema generation alone does not migrate their data. Skip
+the legacy provider conversion steps below, including the intermediate
+deployment, export, and cleanup.
+
+Use a temporary Convex schema that accepts both the existing and migrated client
+records. Backfill the new fields and remove the legacy `type` and `public`
+fields from existing `oauthClient` documents before deploying the final
+generated schema. Remove those fields in a component mutation with
+`ctx.db.patch(id, { type: undefined, public: undefined })`. Setting them to
+`null` still leaves fields that the final schema rejects.
+
+### Deploy an intermediate version
+
+Back up your data and pause authentication writes and public HTTP routes for the
+conversion. Keep them paused until the final provider setup has been tested.
+Better Auth 1.7 no longer exports `oidcProvider`. Remove its imports and uses
+from all modules that Convex builds before deploying the upgraded dependencies.
+Use a temporary 1.7-compatible auth configuration or disable the affected auth
+functions and routes during this step. Keep the component mounted under its
+existing name and retain its legacy tables and data.
+
+For the bundled component, the upgraded package retains the three legacy
+provider tables and includes the migration functions. Keep the same component
+mount. For an existing Local Install, keep the existing mount and deploy a
+temporary schema that retains `oauthApplication` and accepts both legacy and new
+`oauthAccessToken` and `oauthConsent` records. Keep both sets of fields and
+indexes, make required new fields such as `clientId` and `scopes` optional, and
+allow `scopes` to be a string or an array of strings. Copy
+`src/component/migrations.ts` from the installed `@convex-dev/better-auth`
+package to `convex/betterAuth/migrations.ts`. Install `convex-helpers` as a
+direct dependency compatible with your Convex version. The helpers use its
+`paginator` because `ctx.db.query(...).paginate()` is not supported inside
+components.
+
+Add these internal wrappers in the application. If your component mount has a
+name other than `betterAuth`, use that name in place of `components.betterAuth`:
+
+```ts title="convex/migrations.ts"
+import { v } from "convex/values";
+import { internalMutation, internalQuery } from "./_generated/server";
+import { components } from "./_generated/api";
+
+export const listLegacyOAuthApplications = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, { cursor }) => {
+    return await ctx.runQuery(
+      components.betterAuth.migrations.listLegacyOAuthApplications,
+      { paginationOpts: { cursor, numItems: 100 } }
+    );
+  },
+});
+
+export const clearLegacyOAuthProviderRecords = internalMutation({
+  args: {
+    table: v.union(
+      v.literal("oauthApplication"),
+      v.literal("oauthAccessToken"),
+      v.literal("oauthConsent")
+    ),
+    cursor: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, { table, cursor }) => {
+    return await ctx.runMutation(
+      components.betterAuth.migrations.clearLegacyOAuthProviderRecords,
+      { table, paginationOpts: { cursor, numItems: 100 } }
+    );
+  },
+});
+```
+
+Deploy the intermediate component, application changes, and wrappers before
+running the migration functions. For the development deployment selected by
+`convex dev`, run:
+
+```bash
+npx convex dev --once
+```
+
+For production, use `npx convex deploy` while writes and routes remain paused.
+Confirm the target deployment before running either command. Regenerate Convex
+bindings as part of the deployment.
+
+### Export and clear legacy records
+
+Export every page of client registrations and save the results securely. The
+export omits `clientSecret`. Review custom `metadata` before reusing it.
+
+```bash
+npx convex run migrations:listLegacyOAuthApplications '{"cursor":null}'
+```
+
+After verifying the export, clear the old tokens, consents, and applications in
+that order. This invalidates existing provider tokens and removes client
+secrets.
+
+```bash
+npx convex run migrations:clearLegacyOAuthProviderRecords \
+  '{"table":"oauthAccessToken","cursor":null}'
+npx convex run migrations:clearLegacyOAuthProviderRecords \
+  '{"table":"oauthConsent","cursor":null}'
+npx convex run migrations:clearLegacyOAuthProviderRecords \
+  '{"table":"oauthApplication","cursor":null}'
+```
+
+For each command, pass the returned `continueCursor` to the next call until
+`isDone` is true. A completed cursor is terminal. Use `null` only to start a new
+pass. Add `--prod` when running against production.
+
+### Deploy the new provider
+
+1. If you use the bundled component, follow the
+   [Local Install guide](/local-install). Otherwise, continue with your existing
+   Local Install. Keep the component mounted under the same name so its existing
+   data stays in place.
+2. Install `@better-auth/oauth-provider@~1.7.7` and configure `jwt()` and
+   `oauthProvider()` in your static Better Auth options. Follow the upstream
+   [provider migration guide](https://www.better-auth.com/docs/guides/1-7-upgrade-guide#as-an-identity-provider).
+3. Generate the new schema after adding the plugin and clearing all three legacy
+   tables.
+4. Remove the temporary migration wrappers and any copied component helper.
+   Deploy while writes remain paused. Confirm that existing users, accounts, and
+   sessions remain under the same component mount before proceeding.
+5. Re-register exported clients. Map `redirectUrls` to `redirectUris`, parse
+   legacy `metadata` as JSON, and review grant types and token authentication.
+   Distribute new client secrets and issue new provider tokens.
+6. Test authorization, consent, token issuance, refresh, user info, and logout
+   before restoring traffic. Restore the backup with the old application version
+   if the conversion fails.
+
+### Configure provider signing keys
+
+Use database-backed signing keys for this provider setup. Static keys passed to
+`convex({ jwks: ... })` are not supported: the JWT plugin signs provider tokens
+with database keys, while Convex publishes the static keys. Clients would then
+be unable to verify those provider tokens.
+
+In the runtime plugin array, place `jwt()` before `convex()` and
+`oauthProvider()` after `convex()`. These plugins share endpoint keys, so order
+matters. `registerRoutes` and `registerRoutesLazy` direct root OpenID discovery
+to the OAuth provider when it is configured, so root discovery advertises the
+provider issuer. Convex JWT verifiers should continue to use the Convex issuer
+and `/api/auth/convex/jwks` directly.
+
+Configure the JWT plugin to use Convex's public signing-key URL:
+
+```ts
+jwt({
+  disableSettingJwtHeader: true,
+  jwks: {
+    remoteUrl: `${process.env.CONVEX_SITE_URL}/api/auth/convex/jwks`,
+    keyPairConfig: { alg: "RS256" },
+  },
+});
+```
+
+Replace `/api/auth` if you use a custom `basePath`. Use the same signing
+algorithm as your Convex auth configuration (`RS256` by default). Disabling the
+JWT header avoids generating an extra token when reading a session. Convex
+clients use `/convex/token`.
+
+### Custom consent pages
+
+Before displaying consent details, verify the signed query on the server with
+`verifyOAuthQueryParams` from `@better-auth/oauth-provider`. Use the provider's
+resolved secret, `(await auth.$context).secret`, from your server-side auth
+instance and keep it on the server. See the upstream
+[consent screen example](https://www.better-auth.com/docs/plugins/oauth-provider#consent-screen).
+
+## Local Install additional steps
+
+<div className="fd-steps">
+
+  <div className="fd-step">
+
+### Regenerate schema
+
+Generate the 1.7.7 schema to a side file and compare it with your deployed
+schema:
+
+```npm
+cd convex/betterAuth
+npx auth generate --output generatedSchema.next.ts
+```
+
+Preserve existing plugin tables, custom fields, and indexes. Include the
+generated credential lookup index `userId_providerId_accountId` on
+`["userId", "providerId", "accountId"]` and export `incrementOne` with your
+other adapter functions. The adapter implements `consumeOne` using the
+component's atomic `deleteOne`.
+
+If you use Local Install with `oidcProvider`, follow the intermediate deployment
+and export steps in [OAuth or OIDC provider](#oauth-or-oidc-provider) before
+applying the final provider schema.
+
+  </div>
+
+  <div className="fd-step">
+
+### Indexed null comparisons
+
+As before, an indexed equality comparison with `null` does not include documents
+where the indexed field is omitted. The atomic refresh-token guard also checks
+omitted fields when it looks up a record by ID.
+
+  </div>
+
+</div>
