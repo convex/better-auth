@@ -173,6 +173,7 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
           matcher: (ctx) => {
             return Boolean(
               (ctx.path?.startsWith("/callback") ||
+                ctx.path?.startsWith("/oauth2/callback") ||
                 ctx.path?.startsWith("/magic-link/verify")) &&
               !isExpoNative(ctx)
             );

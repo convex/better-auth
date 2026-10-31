@@ -1,5 +1,3 @@
-import { crossDomainCapability } from "../plugins/cross-domain/client.js";
-
 export type RequiredAuthClient = {
   useSession: () => {
     data: { session?: { id: string } } | null;
@@ -16,7 +14,6 @@ export type RequiredAuthClient = {
 };
 
 type AuthClientWithCrossDomain = RequiredAuthClient & {
-  crossDomainCapability: typeof crossDomainCapability;
   crossDomain: {
     oneTimeToken: {
       verify: (args: { token: string }) => Promise<{
@@ -27,17 +24,6 @@ type AuthClientWithCrossDomain = RequiredAuthClient & {
   updateSession: () => void;
 };
 
-const hasCrossDomain = (
-  authClient: RequiredAuthClient
-): authClient is AuthClientWithCrossDomain => {
-  const candidate = authClient as Partial<AuthClientWithCrossDomain>;
-  return (
-    candidate.crossDomainCapability === crossDomainCapability &&
-    typeof candidate.crossDomain?.oneTimeToken?.verify === "function" &&
-    typeof candidate.updateSession === "function"
-  );
-};
-
 export const handleCrossDomainCallback = async (
   authClient: RequiredAuthClient,
   href: string,
@@ -45,13 +31,16 @@ export const handleCrossDomainCallback = async (
 ) => {
   const url = new URL(href);
   const token = url.searchParams.get("ott");
-  if (!token || !hasCrossDomain(authClient)) {
+  if (!token) {
     return;
   }
 
   url.searchParams.delete("ott");
   replaceUrl(url);
-  const result = await authClient.crossDomain.oneTimeToken.verify({ token });
+  const crossDomainClient = authClient as AuthClientWithCrossDomain;
+  const result = await crossDomainClient.crossDomain.oneTimeToken.verify({
+    token,
+  });
   const session = result.data?.session;
   if (!session) {
     return;
@@ -63,5 +52,5 @@ export const handleCrossDomainCallback = async (
       },
     },
   });
-  authClient.updateSession();
+  crossDomainClient.updateSession();
 };

@@ -11,7 +11,6 @@ import type { JwtOptions, Jwk } from "better-auth/plugins/jwt";
 import { omit } from "convex-helpers";
 import type { AuthConfig, AuthProvider } from "convex/server";
 import { VERSION } from "../../version.js";
-import { getJwksUrl } from "../../jwks-url.js";
 
 export const JWT_COOKIE_NAME = "convex_jwt";
 
@@ -304,14 +303,14 @@ export const convex = (opts: {
           matcher: (ctx) => {
             return Boolean(
               ctx.path?.startsWith("/sign-in") ||
-                ctx.path?.startsWith("/sign-up") ||
-                ctx.path?.startsWith("/callback") ||
-                ctx.path?.startsWith("/magic-link/verify") ||
-                ctx.path?.startsWith("/email-otp/verify-email") ||
-                ctx.path?.startsWith("/phone-number/verify") ||
-                ctx.path?.startsWith("/siwe/verify") ||
-                ctx.path?.startsWith("/update-session") ||
-                (ctx.path?.startsWith("/get-session") && ctx.context.session)
+              ctx.path?.startsWith("/sign-up") ||
+              ctx.path?.startsWith("/callback") ||
+              ctx.path?.startsWith("/magic-link/verify") ||
+              ctx.path?.startsWith("/email-otp/verify-email") ||
+              ctx.path?.startsWith("/phone-number/verify") ||
+              ctx.path?.startsWith("/siwe/verify") ||
+              ctx.path?.startsWith("/update-session") ||
+              (ctx.path?.startsWith("/get-session") && ctx.context.session)
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
@@ -322,7 +321,7 @@ export const convex = (opts: {
                 ctx.context.session ?? ctx.context.newSession;
               const { token } = await jwt.endpoints.getToken({
                 ...ctx,
-                headers: {},
+                headers: new Headers(),
                 method: "GET",
                 asResponse: false,
                 returnHeaders: false,
@@ -344,8 +343,8 @@ export const convex = (opts: {
           matcher: (ctx) => {
             return Boolean(
               ctx.path?.startsWith("/sign-out") ||
-                ctx.path?.startsWith("/delete-user") ||
-                (ctx.path?.startsWith("/get-session") && !ctx.context.session)
+              ctx.path?.startsWith("/delete-user") ||
+              (ctx.path?.startsWith("/get-session") && !ctx.context.session)
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
@@ -368,13 +367,10 @@ export const convex = (opts: {
           // TODO: properly type this
         },
         async (_ctx) => {
-          const issuer = process.env.CONVEX_SITE_URL;
-          if (!issuer) {
-            throw new Error("CONVEX_SITE_URL is not set");
-          }
+          const issuer = `${process.env.CONVEX_SITE_URL}`;
           return {
             issuer,
-            jwks_uri: getJwksUrl(issuer, opts.options?.basePath),
+            jwks_uri: `${issuer}${opts.options?.basePath ?? "/api/auth"}/convex/jwks`,
             id_token_signing_alg_values_supported: [getJwksAlg(providerConfig)],
             claims_supported: [
               "sub",

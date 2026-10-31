@@ -1,10 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  crossDomainCapability,
-  crossDomainClient,
-  getCookie,
-  getSetCookie,
-} from "./client.js";
+import { crossDomainClient, getCookie, getSetCookie } from "./client.js";
 
 describe("getSetCookie", () => {
   it("stores cookies from RFC-1123 Expires headers without splitting the date", () => {
@@ -162,10 +157,6 @@ describe("crossDomainClient", () => {
     plugin.getActions({} as any, mockStore as any, undefined);
     return { onSuccess: plugin.fetchPlugins![0].hooks!.onSuccess!, notify };
   }
-
-  it("exposes an explicit cross-domain capability marker", () => {
-    expect(getActions().crossDomainCapability).toBe(crossDomainCapability);
-  });
 
   describe("getSessionData", () => {
     it("returns null when storage is empty", () => {

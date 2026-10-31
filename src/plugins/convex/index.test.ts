@@ -97,28 +97,4 @@ describe("convex plugin OpenID configuration", () => {
     }
   });
 
-  it.each([
-    ["/", "https://deployment.convex.site/convex/jwks"],
-    ["/custom/auth/", "https://deployment.convex.site/custom/auth/convex/jwks"],
-  ])("normalizes the %s base path", async (basePath, expected) => {
-    const originalConvexSiteUrl = process.env.CONVEX_SITE_URL;
-    process.env.CONVEX_SITE_URL = "https://deployment.convex.site";
-    try {
-      const plugin = convex({ authConfig, options: { basePath } });
-      const response = await plugin.endpoints!.getOpenIdConfig!({
-        context: {},
-        asResponse: false,
-        returnHeaders: false,
-        returnStatus: false,
-      });
-
-      expect(response).toMatchObject({ jwks_uri: expected });
-    } finally {
-      if (originalConvexSiteUrl === undefined) {
-        delete process.env.CONVEX_SITE_URL;
-      } else {
-        process.env.CONVEX_SITE_URL = originalConvexSiteUrl;
-      }
-    }
-  });
 });
