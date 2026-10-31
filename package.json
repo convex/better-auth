@@ -8,6 +8,9 @@
   },
   "version": "0.12.6",
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24"
+  },
   "keywords": [
     "convex",
     "component",

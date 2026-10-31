@@ -104,8 +104,20 @@ type InternalWithTestProfiles = {
 };
 
 if (currentNodeMajor < MIN_NODE_MAJOR) {
+  // The upstream adapter suite cannot load on older Node versions
+  // (@better-auth/test-utils uses explicit resource management syntax), so
+  // this file fails loudly rather than skipping: a green run on an older
+  // Node must not be mistaken for the suite passing. The convex-test based
+  // suites in the other files still run on Node 22.
   describe("Better Auth Adapter Tests", () => {
-    it.skip(`requires Node ${MIN_NODE_MAJOR}+ (adapter test-utils uses explicit resource management syntax)`, () => {});
+    it(`requires Node ${MIN_NODE_MAJOR}+`, () => {
+      throw new Error(
+        `The upstream Better Auth adapter suite requires Node ${MIN_NODE_MAJOR}+ ` +
+          `(running ${process.versions.node}). Install Node ${MIN_NODE_MAJOR} ` +
+          `(see .nvmrc) to run it. This is a failure, not a skip, so a green ` +
+          `run on an older Node cannot be mistaken for the suite passing.`
+      );
+    });
   });
 } else {
   describe("Better Auth Adapter Tests", async () => {
