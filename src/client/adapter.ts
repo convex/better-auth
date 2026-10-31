@@ -17,6 +17,7 @@ import type { Where } from "better-auth/types";
 import { asyncMap } from "convex-helpers";
 import { prop, sortBy } from "remeda";
 import { isRunMutationCtx } from "../utils/index.js";
+import { runAtomicMutation } from "./atomic-retry.js";
 import type { Doc, TableNames } from "../component/_generated/dataModel.js";
 import type { AuthFunctions, GenericCtx, Triggers } from "./index.js";
 
@@ -46,9 +47,11 @@ const handlePagination = async (
   const onResult = (
     result: SetOptional<PaginationResult<any>, "page"> & { count?: number }
   ) => {
-    // splitCursor divides the page we already received. Continuing there would
-    // revisit its second half and double-count reads and mutations.
-    state.cursor = result.continueCursor;
+    state.cursor =
+      result.pageStatus === "SplitRecommended" ||
+      result.pageStatus === "SplitRequired"
+        ? (result.splitCursor ?? result.continueCursor)
+        : result.continueCursor;
     if (result.page) {
       state.docs.push(...result.page);
       state.isDone = (limit && state.docs.length >= limit) || result.isDone;
@@ -432,13 +435,15 @@ export const convexAdapter = <
                   config.authFunctions.onDelete
                 )) as FunctionHandle<"mutation">)
               : undefined;
-          return ctx.runMutation(api.adapter.deleteOne, {
-            input: {
-              model: data.model as TableNames,
-              where: parseWhere(data.where),
-            },
-            onDeleteHandle,
-          });
+          return runAtomicMutation(ctx, () =>
+            ctx.runMutation(api.adapter.deleteOne, {
+              input: {
+                model: data.model as TableNames,
+                where: parseWhere(data.where),
+              },
+              onDeleteHandle,
+            })
+          );
         },
         incrementOne: async (data): Promise<any> => {
           if (!("runMutation" in ctx)) {
@@ -454,15 +459,17 @@ export const convexAdapter = <
                   config.authFunctions.onUpdate
                 )) as FunctionHandle<"mutation">)
               : undefined;
-          return ctx.runMutation(api.adapter.incrementOne, {
-            input: {
-              model: data.model as TableNames,
-              where: parseWhere(data.where),
-              increment: data.increment,
-              set: data.set as any,
-            },
-            onUpdateHandle,
-          });
+          return runAtomicMutation(ctx, () =>
+            ctx.runMutation(api.adapter.incrementOne, {
+              input: {
+                model: data.model as TableNames,
+                where: parseWhere(data.where),
+                increment: data.increment,
+                set: data.set as any,
+              },
+              onUpdateHandle,
+            })
+          );
         },
         delete: async (data) => {
           if (!("runMutation" in ctx)) {

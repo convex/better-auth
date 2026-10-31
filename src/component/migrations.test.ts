@@ -90,10 +90,10 @@ describe("legacy OAuth provider migrations", () => {
     );
 
     const [account] = await t.run((ctx) => ctx.db.query("account").collect());
+    expect(account?.accountId).toBe("github-subject");
     const consents = await t.run((ctx) =>
       ctx.db.query("oauthConsent").collect()
     );
-    expect(account?.issuer).toBeUndefined();
     expect(consents).toHaveLength(1);
   });
 

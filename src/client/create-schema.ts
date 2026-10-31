@@ -190,14 +190,29 @@ export const tables = {
       return typeMap[type];
     }
 
-    const indexes =
-      mergedIndexFields(tables)[
-        tableKey as keyof typeof mergedIndexFields
-      ]?.map((index) => {
-        const indexArray = Array.isArray(index) ? index : [index];
-        const indexName = indexArray.join("_");
-        return `.index("${indexName}", ${JSON.stringify(indexArray)})`;
-      }) || [];
+    const tableIndexes: string[][] = mergedIndexFields(tables)[tableKey] ?? [];
+    // Preserve valid natural names, including names such as "a_b_2" declared
+    // later. Shorten overlong names and reserve space for collision suffixes.
+    const reservedNames = new Set(
+      tableIndexes.map((fields) => fields.join("_"))
+    );
+    const usedNames = new Set<string>();
+    const indexes = tableIndexes.map((indexFields) => {
+      const baseName = indexFields.join("_");
+      let indexName = baseName.slice(0, 64);
+      if (
+        usedNames.has(indexName) ||
+        (indexName !== baseName && reservedNames.has(indexName))
+      ) {
+        let suffix = 2;
+        do {
+          const ending = `_${suffix++}`;
+          indexName = `${baseName.slice(0, 64 - ending.length)}${ending}`;
+        } while (reservedNames.has(indexName) || usedNames.has(indexName));
+      }
+      usedNames.add(indexName);
+      return `.index("${indexName}", ${JSON.stringify(indexFields)})`;
+    });
 
     const schema = `${modelName}: defineTable({
 ${Object.keys(fields)

@@ -1,5 +1,7 @@
+import { fieldValue } from "./index-stream.js";
+import type { QueryStream } from "convex-helpers/server/stream";
 import { asyncMap } from "convex-helpers";
-import { v } from "convex/values";
+import { compareValues, ConvexError, v } from "convex/values";
 import type { GenericId, Infer } from "convex/values";
 import type {
   DocumentByName,
@@ -374,7 +376,8 @@ const filterByWhere = <
   doc: D | null,
   where?: Infer<typeof adapterWhereValidator>[],
   // Optionally filter which where clauses to apply.
-  filterWhere?: (w: Infer<typeof adapterWhereValidator>) => any
+  filterWhere?: (w: Infer<typeof adapterWhereValidator>) => any,
+  matchMissingNull = false
 ) => {
   if (!doc) {
     return false;
@@ -383,34 +386,18 @@ const filterByWhere = <
     if (filterWhere && !filterWhere(w)) {
       continue;
     }
-    const value = doc[w.field as keyof typeof doc] as Infer<
+    const value = fieldValue(doc, w.field) as Infer<
       typeof adapterWhereValidator
     >["value"];
-    const isLessThan = (val: typeof value, wVal: typeof w.value) => {
-      if (wVal === undefined || wVal === null) {
-        return false;
-      }
-      if (val === undefined || val === null) {
-        return true;
-      }
-      return val < wVal;
-    };
-    const isGreaterThan = (val: typeof value, wVal: typeof w.value) => {
-      if (val === undefined || val === null) {
-        return false;
-      }
-      if (wVal === undefined || wVal === null) {
-        return true;
-      }
-      return val > wVal;
-    };
     const filter = (w: Infer<typeof adapterWhereValidator>) => {
       switch (w.operator) {
         case undefined:
         case "eq": {
           // Convex omits unset optional fields; Better Auth's null guards must
           // also match those fields (for example, unrevoked refresh tokens).
-          return w.value === null ? value == null : value === w.value;
+          return matchMissingNull && w.value === null
+            ? value == null
+            : value === w.value;
         }
         case "in": {
           return Array.isArray(w.value) && (w.value as any[]).includes(value);
@@ -421,19 +408,19 @@ const filterByWhere = <
           return result;
         }
         case "lt": {
-          return isLessThan(value, w.value);
+          return compareValues(value, w.value) < 0;
         }
         case "lte": {
-          return value === w.value || isLessThan(value, w.value);
+          return compareValues(value, w.value) <= 0;
         }
         case "gt": {
-          return isGreaterThan(value, w.value);
+          return compareValues(value, w.value) > 0;
         }
         case "gte": {
-          return value === w.value || isGreaterThan(value, w.value);
+          return compareValues(value, w.value) >= 0;
         }
         case "ne": {
-          return w.value === null ? value != null : value !== w.value;
+          return value !== w.value;
         }
         case "contains": {
           return typeof value === "string" && value.includes(w.value as string);
@@ -455,80 +442,135 @@ const filterByWhere = <
   return true;
 };
 
+type Equality = readonly (readonly [string, unknown])[];
+type IndexMatch = NonNullable<ReturnType<typeof findIndex>>;
+type IndexedPlan = {
+  indexName: string;
+  bounds: IndexMatch["values"];
+  boundField: string | undefined;
+  mergeFields: string[];
+  inMode: "shared" | "branches";
+};
+type QueryPlan =
+  | { kind: "scan"; indexFields?: string[]; inMode: "shared" }
+  | (IndexedPlan & { kind: "direct"; equality: Equality });
+
+const queryPlan = (
+  schema: SchemaDefinition<any, any>,
+  args: Infer<typeof adapterArgsValidator>
+): QueryPlan => {
+  const { index, values, boundField, indexFields } =
+    findIndex(schema, args) ?? {};
+  if (!index || index.indexDescriptor === "by_creation_time")
+    return { kind: "scan", indexFields, inMode: "shared" };
+  const equality: Equality = values?.eq ?? [];
+  return {
+    kind: "direct",
+    indexName: index.indexDescriptor,
+    bounds: values,
+    boundField,
+    mergeFields: index.fields.slice(equality.length),
+    inMode: "branches",
+    equality,
+  };
+};
+
+// All values in an IN predicate are non-null; only its fixed equality value
+// changes between physical ranges, so the same plan can serve every branch.
+const bindInValue = (
+  plan: QueryPlan,
+  field: string,
+  value: string | number
+): QueryPlan => {
+  const bind = (equality: Equality): Equality =>
+    equality.map(([key, original]) => [key, key === field ? value : original]);
+  switch (plan.kind) {
+    case "scan":
+      return plan;
+    case "direct":
+      return { ...plan, equality: bind(plan.equality) };
+  }
+};
+
 const generateQuery = (
   ctx: GenericQueryCtx<GenericDataModel>,
   schema: SchemaDefinition<any, any>,
-  args: Infer<typeof adapterArgsValidator>
-) => {
-  const { index, values, boundField, indexFields } =
-    findIndex(schema, args) ?? {};
-  const usableIndex =
-    index?.indexDescriptor === "by_creation_time" ? undefined : index;
-  const query = stream(ctx.db as any, schema).query(args.model as any);
-  const hasValues =
-    (values?.eq?.length ?? 0) > 0 ||
-    values?.lt !== undefined ||
-    values?.lte !== undefined ||
-    values?.gt !== undefined ||
-    values?.gte !== undefined;
-  const indexedQuery = usableIndex
-    ? query.withIndex(
-        usableIndex.indexDescriptor,
-        hasValues
-          ? (q: any) => {
-              for (const [field, value] of values?.eq ?? []) {
-                q = q.eq(field, value);
-              }
-              if (values?.lt !== undefined) {
-                q = q.lt(boundField, values.lt);
-              }
-              if (values?.lte !== undefined) {
-                q = q.lte(boundField, values.lte);
-              }
-              if (values?.gt !== undefined) {
-                q = q.gt(boundField, values.gt);
-              }
-              if (values?.gte !== undefined) {
-                q = q.gte(boundField, values.gte);
-              }
-              return q;
-            }
-          : undefined
-      )
-    : query;
-  const orderedQuery = args.sortBy
-    ? indexedQuery.order(args.sortBy.direction === "desc" ? "desc" : "asc")
-    : indexedQuery;
-  if (!usableIndex && indexFields?.length) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      stripIndent`
-        Querying without an index on table "${args.model}".
-        This can cause performance issues, and may hit the document read limit.
-        To fix, add an index that begins with the following fields in order:
-        [${indexFields.join(", ")}]
-      `
-    );
-  }
-  const filteredQuery = orderedQuery.filterWith(async (doc) => {
-    if (!usableIndex) {
-      // No usable index, handle all where clauses statically.
-      return filterByWhere(doc, args.where);
+  args: Infer<typeof adapterArgsValidator>,
+  plan: QueryPlan,
+  staticWhere = args.where,
+  matchMissingNull = false
+): QueryStream<any> => {
+  const direction = args.sortBy?.direction === "desc" ? "desc" : "asc";
+  if (plan.kind === "scan") {
+    if (plan.indexFields?.length) {
+      // eslint-disable-next-line no-console
+      console.warn(stripIndent`Querying without an index on table "${args.model}".
+        Add an index that begins with [${plan.indexFields.join(", ")}].`);
     }
-    return filterByWhere(
+    return stream(ctx.db as any, schema)
+      .query(args.model as any)
+      .order(direction)
+      .filterWith(async (doc) =>
+        filterByWhere(doc, staticWhere, undefined, matchMissingNull)
+      );
+  }
+  const build = (equality: Equality) => {
+    const query = stream(ctx.db as any, schema).query(args.model as any);
+    return query
+      .withIndex(plan.indexName, (q: any) => {
+        for (const [field, value] of equality) q = q.eq(field, value);
+        if (plan.bounds?.lt !== undefined)
+          q = q.lt(plan.boundField, plan.bounds.lt);
+        if (plan.bounds?.lte !== undefined)
+          q = q.lte(plan.boundField, plan.bounds.lte);
+        if (plan.bounds?.gt !== undefined)
+          q = q.gt(plan.boundField, plan.bounds.gt);
+        if (plan.bounds?.gte !== undefined)
+          q = q.gte(plan.boundField, plan.bounds.gte);
+        return q;
+      })
+      .order(direction);
+  };
+  const query = build(plan.equality);
+  return query.filterWith(async (doc) =>
+    filterByWhere(
       doc,
-      args.where,
-      // Index used for all eq and range clauses, apply remaining clauses
-      // incompatible with Convex statically.
+      staticWhere,
       (w) =>
-        w.operator &&
-        ["contains", "starts_with", "ends_with", "ne", "not_in"].includes(
+        !!w.operator &&
+        ["contains", "starts_with", "ends_with", "ne", "in", "not_in"].includes(
           w.operator
-        )
-    );
-  });
-  return filteredQuery;
+        ),
+      matchMissingNull
+    )
+  );
 };
+
+const CURSOR_PREFIX = "better-auth:1:";
+const restartPagination = () =>
+  new ConvexError({
+    code: "BETTER_AUTH_PAGINATION_RESTART_REQUIRED",
+    message:
+      "This pagination cursor belongs to an older or invalid query format. Discard prior pages and restart with cursor: null.",
+  });
+const decodeCursor = (cursor: string | null | undefined) => {
+  if (cursor == null) return cursor;
+  if (!cursor.startsWith(CURSOR_PREFIX)) throw restartPagination();
+  const raw = cursor.slice(CURSOR_PREFIX.length);
+  try {
+    if (!Array.isArray(JSON.parse(raw))) throw restartPagination();
+  } catch {
+    throw restartPagination();
+  }
+  return raw;
+};
+const encodePage = <T>(result: PaginationResult<T>): PaginationResult<T> => ({
+  ...result,
+  continueCursor: CURSOR_PREFIX + result.continueCursor,
+  ...(result.splitCursor != null
+    ? { splitCursor: CURSOR_PREFIX + result.splitCursor }
+    : {}),
+});
 
 // This is the core function for reading from the database, it parses and
 // validates where conditions, selects indexes, and allows the caller to
@@ -542,7 +584,8 @@ export const paginate = async <
   betterAuthSchema: BetterAuthDBSchema,
   args: Infer<typeof adapterArgsValidator> & {
     paginationOpts: PaginationOptions;
-  }
+  },
+  matchMissingNull = false
 ): Promise<PaginationResult<Doc>> => {
   if (args.offset) {
     throw new Error(`offset not supported: ${JSON.stringify(args.offset)}`);
@@ -575,6 +618,7 @@ export const paginate = async <
   const uniqueWhere = args.where?.find(
     (w) =>
       (!w.operator || w.operator === "eq") &&
+      w.value !== null &&
       (isUniqueField(betterAuthSchema, args.model, w.field) ||
         w.field === "_id")
   );
@@ -600,7 +644,9 @@ export const paginate = async <
             .unique();
 
     // Apply all other clauses as static filters to our 0 or 1 result.
-    if (filterByWhere(doc, args.where, (w) => w !== uniqueWhere)) {
+    if (
+      filterByWhere(doc, args.where, (w) => w !== uniqueWhere, matchMissingNull)
+    ) {
       return {
         page: [selectFields(doc, args.select)].filter(Boolean) as Doc[],
         isDone: true,
@@ -616,6 +662,12 @@ export const paginate = async <
 
   const paginationOpts = {
     ...args.paginationOpts,
+    cursor: decodeCursor(args.paginationOpts.cursor) ?? null,
+    endCursor: decodeCursor(args.paginationOpts.endCursor),
+    maximumBytesRead: Math.min(
+      args.paginationOpts.maximumBytesRead ?? 4 * 1024 * 1024,
+      4 * 1024 * 1024
+    ),
     // If maximumRowsRead is not at least 1 higher than numItems, bad cursors
     // and incorrect paging will result (at least with convex-test).
     maximumRowsRead: Math.max((args.paginationOpts.numItems ?? 0) + 1, 200),
@@ -637,7 +689,9 @@ export const paginate = async <
       });
       const filteredDocs = docs
         .flatMap((doc) => (doc ? [doc] : []))
-        .filter((doc) => filterByWhere(doc, args.where, (w) => w !== inWhere));
+        .filter((doc) =>
+          filterByWhere(doc, args.where, (w) => w !== inWhere, matchMissingNull)
+        );
 
       return {
         page: filteredDocs
@@ -669,34 +723,64 @@ export const paginate = async <
         continueCursor: "",
       };
     }
-    const streams = inWhere.value.map((value) => {
-      return generateQuery(ctx, schema, {
-        ...args,
-        where: args.where?.map((w) => {
-          if (w === inWhere) {
-            return { ...w, operator: "eq", value };
-          }
-          return w;
-        }),
-      });
+    // Avoid creating duplicate indexed branches for repeated IN values.
+    const inValues = [...new Set<string | number>(inWhere.value)];
+    if (!inValues.length) return { page: [], isDone: true, continueCursor: "" };
+    const branchArgs = (value: string | number) => ({
+      ...args,
+      where: args.where?.map((w) =>
+        w === inWhere ? { ...w, operator: "eq" as const, value } : w
+      ),
     });
-    const result = await mergedStream(
-      streams,
-      [
-        args.sortBy?.field !== "createdAt" && args.sortBy?.field,
-        "_creationTime",
-      ].flatMap((f) => (f ? [f] : []))
-    ).paginate(paginationOpts);
+    const first = branchArgs(inValues[0]!);
+    const plan = queryPlan(schema, first);
+    if (plan.inMode === "shared") {
+      // Multiple filtered streams over the same physical range can checkpoint
+      // a rejected copy of a row before another stream emits its matching copy.
+      // Query this range once and evaluate IN as a single static predicate.
+      const result = await generateQuery(
+        ctx,
+        schema,
+        first,
+        plan,
+        args.where,
+        matchMissingNull
+      ).paginate(paginationOpts);
+      return {
+        ...encodePage(result),
+        page: result.page.map((doc) => selectFields(doc, args.select)),
+      };
+    }
+    const streams = inValues.map((value) =>
+      generateQuery(
+        ctx,
+        schema,
+        branchArgs(value),
+        bindInValue(plan, inWhere.field, value),
+        undefined,
+        matchMissingNull
+      )
+    );
+    const result = await mergedStream(streams, plan.mergeFields).paginate(
+      paginationOpts
+    );
     return {
-      ...result,
+      ...encodePage(result),
       page: result.page.map((doc) => selectFields(doc, args.select)),
     };
   }
 
-  const query = generateQuery(ctx, schema, args);
+  const query = generateQuery(
+    ctx,
+    schema,
+    args,
+    queryPlan(schema, args),
+    args.where,
+    matchMissingNull
+  );
   const result = await query.paginate(paginationOpts);
   return {
-    ...result,
+    ...encodePage(result),
     page: result.page.map((doc) => selectFields(doc, args.select)),
   };
 };
@@ -708,15 +792,25 @@ export const listOne = async <
   ctx: GenericQueryCtx<GenericDataModel>,
   schema: SchemaDefinition<any, any>,
   betterAuthSchema: BetterAuthDBSchema,
-  args: Infer<typeof adapterArgsValidator>
+  args: Infer<typeof adapterArgsValidator>,
+  matchMissingNull = false
 ): Promise<Doc | null> => {
-  return (
-    await paginate(ctx, schema, betterAuthSchema, {
-      ...args,
-      paginationOpts: {
-        numItems: 1,
-        cursor: null,
+  let cursor: string | null = null;
+  for (;;) {
+    const result: PaginationResult<Doc> = await paginate(
+      ctx,
+      schema,
+      betterAuthSchema,
+      {
+        ...args,
+        paginationOpts: { numItems: 1, cursor },
       },
-    })
-  ).page[0] as Doc | null;
+      matchMissingNull
+    );
+    if (result.page.length) return result.page[0]!;
+    if (result.isDone) return null;
+    if (result.continueCursor === cursor)
+      throw new Error("Pagination cursor did not advance");
+    cursor = result.continueCursor;
+  }
 };

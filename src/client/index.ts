@@ -6,8 +6,8 @@ import type { AuthFunctions, Triggers } from "./create-client.js";
 import { createApi } from "./create-api.js";
 import type { CreateAuth, EventFunction, GenericCtx } from "../utils/index.js";
 
-if (semverLt(convexVersion, "1.25.0")) {
-  throw new Error("Convex version must be at least 1.25.0");
+if (semverLt(convexVersion, "1.46.0")) {
+  throw new Error("Convex version must be at least 1.46.0");
 }
 
 export {

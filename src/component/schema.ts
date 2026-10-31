@@ -1,8 +1,7 @@
 /**
- * Generated from Better Auth 1.7.7, then intentionally staged for the 0.13
+ * Generated from Better Auth 1.7.7, then intentionally staged for the
  * migration. Do not regenerate it without preserving the documented migration
- * exceptions: optional legacy account.issuer and the three legacy OAuth provider
- * tables retained below.
+ * exception: the three legacy OAuth provider tables retained below.
  * To regenerate the schema, from your project root:
  *
  *   npx auth generate --output src/component/schema.ts
@@ -50,9 +49,6 @@ export const tables = {
     .index("token", ["token"])
     .index("userId", ["userId"]),
   account: defineTable({
-    // Retained only for data written by Better Auth 1.7.0–1.7.2.
-    // Better Auth 1.7.7 neither requires nor writes issuer.
-    issuer: v.optional(v.union(v.null(), v.string())),
     accountId: v.string(),
     providerId: v.string(),
     userId: v.string(),
@@ -69,11 +65,7 @@ export const tables = {
     .index("accountId", ["accountId"])
     .index("accountId_providerId", ["accountId", "providerId"])
     .index("providerId_userId", ["providerId", "userId"])
-    .index("userId_providerId_accountId", [
-      "userId",
-      "providerId",
-      "accountId",
-    ])
+    .index("userId_providerId_accountId", ["userId", "providerId", "accountId"])
     .index("userId", ["userId"]),
   verification: defineTable({
     identifier: v.string(),
@@ -92,7 +84,7 @@ export const tables = {
     failedVerificationCount: v.optional(v.union(v.null(), v.number())),
     lockedUntil: v.optional(v.union(v.null(), v.number())),
   }).index("userId", ["userId"]),
-  // Kept during the 0.13 migration so existing OIDC provider clients can be
+  // Kept during the migration so existing OIDC provider clients can be
   // exported before moving provider support to a Local Install.
   oauthApplication: defineTable({
     name: v.optional(v.union(v.null(), v.string())),

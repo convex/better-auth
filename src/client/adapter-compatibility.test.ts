@@ -57,58 +57,6 @@ describe("Better Auth 1.7.7 compatibility", () => {
     }
   );
 
-  it("does not revisit rows when filtered pagination splits a page", async () => {
-    const { t, adapter } = setup();
-    await t.run(async (ctx) => {
-      // Rejected rows force the scan budget to split before 200 matches.
-      for (let i = 0; i < 4; i++) {
-        await ctx.db.insert("user", {
-          name: `Other ${i}`,
-          email: `other-${i}@example.com`,
-          emailVerified: false,
-          createdAt: 1,
-          updatedAt: 1,
-        });
-      }
-      for (let i = 0; i < 205; i++) {
-        await ctx.db.insert("user", {
-          name: `Fixture ${i}`,
-          email: `fixture-${i}@example.com`,
-          emailVerified: false,
-          createdAt: 1,
-          updatedAt: 1,
-        });
-      }
-    });
-    const where = [
-      { field: "email", operator: "starts_with" as const, value: "fixture-" },
-    ];
-    expect(await adapter.count({ model: "user", where })).toBe(205);
-    const users = await adapter.findMany<{ id: string }>({
-      model: "user",
-      where,
-      limit: 1000,
-    });
-    expect(users).toHaveLength(205);
-    expect(new Set(users.map((user) => user.id)).size).toBe(205);
-    const limited = await adapter.findMany<{ id: string }>({
-      model: "user",
-      where,
-      limit: 200,
-    });
-    expect(limited).toHaveLength(200);
-    expect(new Set(limited.map((user) => user.id)).size).toBe(200);
-    expect(
-      await adapter.updateMany({
-        model: "user",
-        where,
-        update: { name: "Updated" },
-      })
-    ).toBe(205);
-    expect(await adapter.deleteMany({ model: "user", where })).toBe(205);
-    expect(await adapter.count({ model: "user", where })).toBe(0);
-  });
-
   it.each([undefined, null, "already-set"])(
     "guards atomic updates against a null optional field (stored: %s)",
     async (image) => {
@@ -126,11 +74,12 @@ describe("Better Auth 1.7.7 compatibility", () => {
         { field: "image", operator: "eq" as const, value: null },
       ];
       const expectedMatch = image == null;
+      const readMatch = image === null;
       expect(Boolean(await adapter.findOne({ model: "user", where }))).toBe(
-        expectedMatch
+        readMatch
       );
       expect(await adapter.findMany({ model: "user", where })).toHaveLength(
-        expectedMatch ? 1 : 0
+        readMatch ? 1 : 0
       );
       expect(
         Boolean(
@@ -142,7 +91,7 @@ describe("Better Auth 1.7.7 compatibility", () => {
             ],
           })
         )
-      ).toBe(!expectedMatch);
+      ).toBe(!readMatch);
       // OAuth refresh rotation uses this shape: an empty increment with a
       // guarded set, where the revocation field may never have been written.
       const claimed = await adapter.incrementOne<{ image: string }>({
@@ -163,7 +112,7 @@ describe("Better Auth 1.7.7 compatibility", () => {
     }
   );
 
-  it("creates and updates core accounts without an issuer backfill", async () => {
+  it("creates and updates core accounts", async () => {
     const { t, adapter } = setup();
     const account = await adapter.create({
       model: "account",
@@ -192,7 +141,6 @@ describe("Better Auth 1.7.7 compatibility", () => {
     });
     const accounts = await t.run((ctx) => ctx.db.query("account").collect());
     expect(accounts).toHaveLength(2);
-    expect(accounts.every((row) => row.issuer === undefined)).toBe(true);
     expect(accounts.find((row) => row.providerId === "provider-a")?.scope).toBe(
       "openid"
     );

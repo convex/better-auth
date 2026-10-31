@@ -46,63 +46,138 @@ const insertLegacyAccount = async (
   );
 
 describe("required fields", () => {
-  it.each(["updateOne", "incrementOne", "updateMany"] as const)(
-    "rejects null issuer through %s",
-    async (operation) => {
+  it.each([
+    [1, Infinity],
+    [1, NaN],
+    [Number.MAX_VALUE, Number.MAX_VALUE],
+    [2 ** 53, 1],
+    [Infinity, 1],
+  ])("rejects unsafe atomic counter arithmetic", async (initial, delta) => {
+    const t = convexTest(schema, import.meta.glob("../component/**/*.*s"));
+    await t.run((ctx) =>
+      ctx.db.insert("twoFactor", {
+        secret: "secret",
+        backupCodes: "[]",
+        userId: "counter-probe",
+        failedVerificationCount: initial,
+      })
+    );
+    const adapter = createClient<DataModel>({
+      adapter: api.testProfiles.adapterConstraints,
+    } as any).adapter({
+      runMutation: t.mutation.bind(t),
+      runQuery: t.query.bind(t),
+    } as any)(constraintsProfileOptions);
+    await expect(
+      adapter.incrementOne({
+        model: "twoFactor",
+        where: [{ field: "userId", value: "counter-probe" }],
+        increment: { failedVerificationCount: delta },
+      })
+    ).rejects.toThrow("Cannot safely increment field");
+    const records = await t.run((ctx) => ctx.db.query("twoFactor").collect());
+    expect(records[0]?.failedVerificationCount).toBe(initial);
+  });
+
+  it.each([null, undefined, 3])(
+    "allows zero increments and nullable counters",
+    async (initial) => {
       const t = convexTest(schema, import.meta.glob("../component/**/*.*s"));
-      await createAccount(t);
-
-      const mutation = t.run(async (ctx) => {
-        if (operation === "updateOne") {
-          return await ctx.runMutation(
-            api.testProfiles.adapterConstraints.updateOne,
-            {
-              input: {
-                model: "account",
-                update: { issuer: null },
-                where: [
-                  { field: "accountId", operator: "eq", value: "user-1" },
-                ],
-              },
-            }
-          );
-        }
-        if (operation === "incrementOne") {
-          return await ctx.runMutation(
-            api.testProfiles.adapterConstraints.incrementOne,
-            {
-              input: {
-                model: "account",
-                increment: { updatedAt: 1 },
-                set: { issuer: null },
-                where: [
-                  { field: "accountId", operator: "eq", value: "user-1" },
-                ],
-              },
-            }
-          );
-        }
-        return await ctx.runMutation(
-          api.testProfiles.adapterConstraints.updateMany,
-          {
-            input: {
-              model: "account",
-              update: { issuer: null },
-              where: [{ field: "accountId", operator: "eq", value: "user-1" }],
-            },
-            paginationOpts: { cursor: null, numItems: 10 },
-          }
-        );
-      });
-
-      await expect(mutation).rejects.toThrow(
-        "Cannot clear required field account.issuer"
+      await t.run((ctx) =>
+        ctx.db.insert("twoFactor", {
+          secret: "secret",
+          backupCodes: "[]",
+          userId: "nullable-counter",
+          ...(initial === undefined
+            ? {}
+            : { failedVerificationCount: initial }),
+        })
       );
-      const accounts = await t.run((ctx) => ctx.db.query("account").collect());
-      expect(accounts).toHaveLength(1);
-      expect(accounts[0]?.issuer).toBe("local:credential");
+      const adapter = createClient<DataModel>({
+        adapter: api.testProfiles.adapterConstraints,
+      } as any).adapter({
+        runMutation: t.mutation.bind(t),
+        runQuery: t.query.bind(t),
+      } as any)(constraintsProfileOptions);
+      await expect(
+        adapter.incrementOne({
+          model: "twoFactor",
+          where: [{ field: "userId", value: "nullable-counter" }],
+          increment: { failedVerificationCount: 0 },
+        })
+      ).resolves.toMatchObject({ failedVerificationCount: initial ?? 0 });
     }
   );
+
+  it("rolls back every increment when one counter is unsafe", async () => {
+    const t = convexTest(schema, import.meta.glob("../component/**/*.*s"));
+    await t.run((ctx) =>
+      ctx.db.insert("rateLimit", {
+        key: "multi-counter",
+        count: 5,
+        lastRequest: 2 ** 53,
+      })
+    );
+    const adapter = createClient<DataModel>({
+      adapter: api.testProfiles.adapterConstraints,
+    } as any).adapter({
+      runMutation: t.mutation.bind(t),
+      runQuery: t.query.bind(t),
+    } as any)(constraintsProfileOptions);
+    await expect(
+      adapter.incrementOne({
+        model: "rateLimit",
+        where: [{ field: "key", value: "multi-counter" }],
+        increment: { count: 1, lastRequest: 1 },
+      })
+    ).rejects.toThrow("Cannot safely increment field");
+    const records = await t.run((ctx) => ctx.db.query("rateLimit").collect());
+    expect(records[0]).toMatchObject({ count: 5, lastRequest: 2 ** 53 });
+  });
+
+  it("applies multiple safe increments together", async () => {
+    const t = convexTest(schema, import.meta.glob("../component/**/*.*s"));
+    await t.run((ctx) =>
+      ctx.db.insert("rateLimit", {
+        key: "multi-valid",
+        count: 5,
+        lastRequest: 3,
+      })
+    );
+    const adapter = createClient<DataModel>({
+      adapter: api.testProfiles.adapterConstraints,
+    } as any).adapter({
+      runMutation: t.mutation.bind(t),
+      runQuery: t.query.bind(t),
+    } as any)(constraintsProfileOptions);
+    await expect(
+      adapter.incrementOne({
+        model: "rateLimit",
+        where: [{ field: "key", value: "multi-valid" }],
+        increment: { count: 2, lastRequest: -1 },
+      })
+    ).resolves.toMatchObject({ count: 7, lastRequest: 2 });
+  });
+
+  it("rejects clearing a required field in a new atomic increment", async () => {
+    const t = convexTest(schema, import.meta.glob("../component/**/*.*s"));
+    await createAccount(t);
+    await expect(
+      t.run((ctx) =>
+        ctx.runMutation(api.testProfiles.adapterConstraints.incrementOne, {
+          input: {
+            model: "account",
+            increment: { updatedAt: 1 },
+            set: { issuer: null },
+            where: [{ field: "accountId", operator: "eq", value: "user-1" }],
+          },
+        })
+      )
+    ).rejects.toThrow("Cannot clear required field account.issuer");
+    expect(
+      (await t.run((ctx) => ctx.db.query("account").collect()))[0]?.issuer
+    ).toBe("local:credential");
+  });
 
   it.each(["updateOne", "incrementOne", "updateMany"] as const)(
     "allows an unrelated %s on a legacy account",
@@ -204,26 +279,6 @@ describe("required fields", () => {
     );
   });
 
-  it("rolls back an onCreate trigger that clears a required field", async () => {
-    const t = convexTest(schema, import.meta.glob("../component/**/*.*s"));
-
-    await expect(
-      t.run(async (ctx) => {
-        const handle = await createFunctionHandle(
-          internal.testTriggerHandlers.accountOnCreateIssuerClearer
-        );
-        return await ctx.runMutation(
-          api.testProfiles.adapterConstraints.create,
-          {
-            input: { model: "account", data: accountData() },
-            onCreateHandle: handle,
-          }
-        );
-      })
-    ).rejects.toThrow("Missing required field account.issuer");
-    expect(await t.run((ctx) => ctx.db.query("account").collect())).toEqual([]);
-  });
-
   it("rolls back an onUpdate trigger that clears a required field", async () => {
     const t = convexTest(schema, import.meta.glob("../component/**/*.*s"));
     await createAccount(t);
@@ -234,11 +289,11 @@ describe("required fields", () => {
           internal.testTriggerHandlers.accountOnUpdateIssuerClearer
         );
         return await ctx.runMutation(
-          api.testProfiles.adapterConstraints.updateOne,
+          api.testProfiles.adapterConstraints.incrementOne,
           {
             input: {
               model: "account",
-              update: { updatedAt: Date.now() + 1 },
+              increment: { updatedAt: 1 },
               where: [{ field: "accountId", operator: "eq", value: "user-1" }],
             },
             onUpdateHandle: handle,

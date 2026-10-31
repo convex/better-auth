@@ -1,3 +1,5 @@
+import bundledSchema from "../component/schema.js";
+import type { GenericCtx } from "../utils/index.js";
 /// <reference types="vite/client" />
 
 import { describe, it } from "vitest";
@@ -129,6 +131,14 @@ if (currentNodeMajor < MIN_NODE_MAJOR) {
       adapter: internalWithTestProfiles.testProfiles[name],
     });
 
+    const bundled = convexTest(
+      bundledSchema,
+      import.meta.glob("../component/**/*.*s")
+    );
+    const bundledCtx = {
+      runQuery: bundled.query.bind(bundled),
+      runMutation: bundled.mutation.bind(bundled),
+    } as GenericCtx<DataModel>;
     const baseProfileClient = createClient<DataModel>(
       { adapter: internalWithTestProfiles.adapter },
       { verbose: false }
@@ -163,7 +173,7 @@ if (currentNodeMajor < MIN_NODE_MAJOR) {
     };
 
     const { execute: executeBaseProfile } = await testAdapter({
-      adapter: () => baseProfileClient.adapter(wrappedCtx),
+      adapter: () => baseProfileClient.adapter(bundledCtx),
       runMigrations: noMigrations,
       overrideBetterAuthOptions: getOverrideBetterAuthOptions,
       tests: [
