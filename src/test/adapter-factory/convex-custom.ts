@@ -1,10 +1,11 @@
 import { createTestSuite } from "@better-auth/test-utils/adapter";
+import { twoFactor } from "better-auth/plugins/two-factor";
 import { expect } from "vitest";
 
 export const convexCustomTestSuite = createTestSuite(
   "convex-custom",
   {},
-  ({ adapter }) => ({
+  ({ adapter, getAuth, modifyBetterAuthOptions }) => ({
     "should handle lone range operators": async () => {
       const user = await adapter.create({
         model: "user",
@@ -1057,6 +1058,220 @@ export const convexCustomTestSuite = createTestSuite(
           ],
         }),
       ).rejects.toThrow(/mode: "insensitive"/);
+    },
+
+    "consumeOne and incrementOne should not touch a row for an empty where":
+      async () => {
+        const verification = await adapter.create<{ id: string }>({
+          model: "verification",
+          data: {
+            identifier: "empty-where",
+            value: "value",
+            expiresAt: new Date(Date.now() + 60_000),
+          },
+        });
+        expect(
+          await adapter.consumeOne({ model: "verification", where: [] }),
+        ).toBeNull();
+        expect(
+          await adapter.incrementOne({
+            model: "verification",
+            where: [],
+            increment: {},
+            set: { value: "changed" },
+          }),
+        ).toBeNull();
+        expect(
+          await adapter.findOne({
+            model: "verification",
+            where: [{ field: "id", value: verification.id }],
+          }),
+        ).toMatchObject({ value: "value" });
+      },
+
+    "consumeOne should delete and return the matched row once": async () => {
+      const verification = await adapter.create<{ id: string }>({
+        model: "verification",
+        data: {
+          identifier: "consume-one",
+          value: "value",
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+      const consumed = await adapter.consumeOne({
+        model: "verification",
+        where: [{ field: "id", value: verification.id }],
+      });
+      expect(consumed).toEqual(verification);
+      expect(
+        await adapter.consumeOne({
+          model: "verification",
+          where: [{ field: "id", value: verification.id }],
+        }),
+      ).toBeNull();
+      expect(
+        await adapter.findOne({
+          model: "verification",
+          where: [{ field: "id", value: verification.id }],
+        }),
+      ).toBeNull();
+    },
+
+    "incrementOne should count from an absent field and honor guards":
+      async () => {
+        await modifyBetterAuthOptions({ plugins: [twoFactor()] }, true);
+        const user = await adapter.create<{ id: string }>({
+          model: "user",
+          data: { name: "two-factor", email: "two-factor@example.com" },
+        });
+        // Created without failedVerificationCount or lockedUntil, like a row
+        // written before Better Auth 1.7 added the lockout fields.
+        const row = await adapter.create<{ id: string }>({
+          model: "twoFactor",
+          data: { secret: "secret", backupCodes: "codes", userId: user.id },
+        });
+        const idWhere = { field: "id", value: row.id };
+
+        const first = await adapter.incrementOne<{
+          failedVerificationCount: number;
+        }>({
+          model: "twoFactor",
+          where: [idWhere],
+          increment: { failedVerificationCount: 1 },
+        });
+        expect(first?.failedVerificationCount).toBe(1);
+        const second = await adapter.incrementOne<{
+          failedVerificationCount: number;
+        }>({
+          model: "twoFactor",
+          where: [idWhere],
+          increment: { failedVerificationCount: 1 },
+        });
+        expect(second?.failedVerificationCount).toBe(2);
+
+        // The where clause is also the guard: a miss changes nothing.
+        expect(
+          await adapter.incrementOne({
+            model: "twoFactor",
+            where: [
+              idWhere,
+              { field: "failedVerificationCount", operator: "gte", value: 5 },
+            ],
+            increment: { failedVerificationCount: 1 },
+          }),
+        ).toBeNull();
+
+        // An eq null guard matches the absent lockedUntil once, then misses.
+        const lockedUntil = new Date(Date.now() + 60_000);
+        const locked = await adapter.incrementOne<{ lockedUntil: Date }>({
+          model: "twoFactor",
+          where: [idWhere, { field: "lockedUntil", value: null }],
+          increment: {},
+          set: { lockedUntil },
+        });
+        expect(new Date(locked!.lockedUntil).getTime()).toBe(
+          lockedUntil.getTime(),
+        );
+        expect(
+          await adapter.incrementOne({
+            model: "twoFactor",
+            where: [idWhere, { field: "lockedUntil", value: null }],
+            increment: {},
+            set: { lockedUntil: new Date() },
+          }),
+        ).toBeNull();
+
+        expect(
+          await adapter.findOne({
+            model: "twoFactor",
+            where: [idWhere],
+          }),
+        ).toMatchObject({
+          failedVerificationCount: 2,
+          lockedUntil: lockedUntil.getTime(),
+        });
+
+        // Clearing an expired lock is guarded by lockedUntil lte now. Once
+        // the lock is cleared, a late duplicate must not match the unset
+        // field and reset the failures recorded since.
+        const clearExpiredLock = () =>
+          adapter.incrementOne({
+            model: "twoFactor",
+            where: [
+              idWhere,
+              {
+                field: "lockedUntil",
+                operator: "lte",
+                value: new Date(Date.now() + 120_000),
+              },
+            ],
+            increment: {},
+            set: { failedVerificationCount: 0, lockedUntil: null },
+          });
+        expect(await clearExpiredLock()).not.toBeNull();
+        await adapter.incrementOne({
+          model: "twoFactor",
+          where: [idWhere],
+          increment: { failedVerificationCount: 1 },
+        });
+        expect(await clearExpiredLock()).toBeNull();
+        expect(
+          await adapter.findOne({
+            model: "twoFactor",
+            where: [idWhere],
+          }),
+        ).toMatchObject({ failedVerificationCount: 1, lockedUntil: null });
+
+        // A compare-and-swap guard copied from an unset field is undefined.
+        expect(
+          await adapter.incrementOne({
+            model: "user",
+            where: [
+              { field: "id", value: user.id },
+              { field: "image", value: undefined as any },
+            ],
+            increment: {},
+            set: { name: "two-factor-renamed" },
+          }),
+        ).toMatchObject({ name: "two-factor-renamed" });
+      },
+
+    "should rate limit with database storage": async () => {
+      await modifyBetterAuthOptions(
+        {
+          baseURL: "http://localhost:3000",
+          emailAndPassword: { enabled: true },
+          rateLimit: {
+            enabled: true,
+            storage: "database",
+            customRules: { "/sign-in/email": { window: 60, max: 2 } },
+          },
+        },
+        true,
+      );
+      const auth = await getAuth();
+      const signIn = () =>
+        auth.handler(
+          new Request("http://localhost:3000/api/auth/sign-in/email", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-forwarded-for": "203.0.113.7",
+            },
+            body: JSON.stringify({
+              email: "rate-limit@example.com",
+              password: "wrong-password",
+            }),
+          }),
+        );
+      expect((await signIn()).status).not.toBe(429);
+      expect((await signIn()).status).not.toBe(429);
+      expect((await signIn()).status).toBe(429);
+      const rows = await adapter.findMany<{ count: number }>({
+        model: "rateLimit",
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.count).toBe(2);
     },
   }),
 );

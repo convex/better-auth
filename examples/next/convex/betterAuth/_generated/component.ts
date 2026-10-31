@@ -327,6 +327,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               };
           onCreateHandle?: string;
           select?: Array<string>;
+          unique?: Array<string>;
         },
         any,
         Name

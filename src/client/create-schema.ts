@@ -17,7 +17,8 @@ const resolveCdTarget = (
 // all fields in the schema specialFields are automatically indexed
 export const indexFields = {
   account: ["accountId", ["accountId", "providerId"], ["providerId", "userId"]],
-  rateLimit: ["key"],
+  // lastRequest: Better Auth prunes expired rows by it.
+  rateLimit: ["key", "lastRequest"],
   session: ["expiresAt", ["expiresAt", "userId"]],
   verification: ["expiresAt", "identifier"],
   user: [["email", "name"], "name", "userId"],

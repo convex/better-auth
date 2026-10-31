@@ -10,6 +10,7 @@ import { asyncMap } from "convex-helpers";
 import { partial } from "convex-helpers/validators";
 import {
   adapterWhereValidator,
+  checkFieldsAvailable,
   checkUniqueFields,
   hasUniqueFields,
   listOne,
@@ -75,6 +76,9 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
           )
         ),
         select: v.optional(v.array(v.string())),
+        // Fields whose value must not already exist in the table, in addition
+        // to the schema's unique fields.
+        unique: v.optional(v.array(v.string())),
         onCreateHandle: v.optional(v.string()),
       },
       handler: async (ctx, args) => {
@@ -84,6 +88,13 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
           betterAuthSchema,
           args.input.model,
           args.input.data
+        );
+        await checkFieldsAvailable(
+          ctx,
+          schema,
+          args.input.model,
+          args.input.data,
+          args.unique ?? []
         );
         const id = await ctx.db.insert(
           args.input.model as any,

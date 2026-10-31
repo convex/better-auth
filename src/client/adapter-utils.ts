@@ -313,6 +313,38 @@ export const checkUniqueFields = async <
   }
 };
 
+// Reject the write if another document already has one of these field values.
+// Unlike checkUniqueFields, the fields needn't be unique in the schema.
+export const checkFieldsAvailable = async (
+  ctx: GenericQueryCtx<GenericDataModel>,
+  schema: SchemaDefinition<any, any>,
+  table: string,
+  input: Record<string, any>,
+  fields: string[]
+) => {
+  for (const field of fields) {
+    const value = input[field];
+    if (value === null || value === undefined) {
+      continue;
+    }
+    const { index } =
+      findIndex(schema, {
+        model: table,
+        where: [{ field, operator: "eq", value }],
+      }) || {};
+    if (!index) {
+      throw new Error(`No index found for ${table}${field}`);
+    }
+    const existingDoc = await ctx.db
+      .query(table as any)
+      .withIndex(index.indexDescriptor, (q) => q.eq(field, value))
+      .first();
+    if (existingDoc) {
+      throw new Error(`${table} ${field} already exists`);
+    }
+  }
+};
+
 // Compare two field values for an in-memory sortBy. A missing or null value
 // sorts before every present value (nulls first ascending, last descending,
 // as in Better Auth's memory adapter) and missing values compare equal to

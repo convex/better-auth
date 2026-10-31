@@ -19,4 +19,47 @@ npx auth generate
 If you added the `oidcProvider` plugin to your options, remove it before
 generating; it no longer exists in Better Auth 1.7.
 
+If you use the organization plugin with teams and already have teams,
+`team.memberCount` is required, so Convex rejects the deploy until every team
+has one. Deploy with the field optional first by editing the generated schema:
+
+```ts title="convex/betterAuth/schema.ts"
+team: defineTable({
+  name: v.string(),
+  memberCount: v.number(), // [!code --]
+  memberCount: v.optional(v.number()), // [!code ++]
+  // ...
+});
+```
+
+Then backfill it from the existing team members:
+
+```ts title="convex/betterAuth/migrations.ts"
+import { internalMutation } from "./_generated/server";
+
+export const backfillTeamMemberCount = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    for await (const team of ctx.db.query("team")) {
+      if (team.memberCount !== undefined) {
+        continue;
+      }
+      const members = await ctx.db
+        .query("teamMember")
+        .withIndex("teamId", (q) => q.eq("teamId", team._id))
+        .collect();
+      await ctx.db.patch("team", team._id, { memberCount: members.length });
+    }
+  },
+});
+```
+
+```npm
+npx convex run --component betterAuth migrations:backfillTeamMemberCount
+```
+
+Until it runs, teams without a `memberCount` reject new members when a team
+member limit is set. Once every team has one, regenerate the schema so the field
+is required again.
+
 </div>

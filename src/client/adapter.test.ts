@@ -1,7 +1,9 @@
 /// <reference types="vite/client" />
 
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { convexTest } from "convex-test";
+import { betterAuth } from "better-auth/minimal";
+import { magicLink } from "better-auth/plugins/magic-link";
 import {
   testAdapter,
   transactionsTestSuite,
@@ -243,5 +245,74 @@ if (currentNodeMajor < MIN_NODE_MAJOR) {
     executeRenameUserCustomProfile();
     executeRenameUserTableProfile();
     executeOrganizationJoinsProfile();
+
+    // The suites above use generateId: "uuid", which drops the deterministic
+    // ids Better Auth uses to reserve verification values.
+    describe("with default ids", () => {
+      const createAuth = (onMagicLink: (url: string) => void = () => {}) =>
+        betterAuth({
+          baseURL: "http://localhost:3000",
+          secret: "test-secret-at-least-thirty-two-characters-long",
+          database: baseProfileClient.adapter(wrappedCtx),
+          emailAndPassword: { enabled: true },
+          logger: { disabled: true },
+          plugins: [
+            magicLink({ sendMagicLink: async ({ url }) => onMagicLink(url) }),
+          ],
+        });
+
+      it("reserves a verification value only once", async () => {
+        const { internalAdapter } = await createAuth().$context;
+        const reservation = {
+          identifier: `reservation-${crypto.randomUUID()}`,
+          value: "value",
+          expiresAt: new Date(Date.now() + 60_000),
+        };
+        expect(await internalAdapter.reserveVerificationValue(reservation)).toBe(
+          true
+        );
+        expect(await internalAdapter.reserveVerificationValue(reservation)).toBe(
+          false
+        );
+        await internalAdapter.deleteVerificationByIdentifier(
+          reservation.identifier
+        );
+        expect(await internalAdapter.reserveVerificationValue(reservation)).toBe(
+          true
+        );
+      });
+
+      it("verifies a magic link for an existing unverified user", async () => {
+        let magicLinkUrl = "";
+        const auth = createAuth((url) => {
+          magicLinkUrl = url;
+        });
+        const email = `magic-${crypto.randomUUID()}@example.com`;
+        const post = (path: string, body: Record<string, unknown>) =>
+          auth.handler(
+            new Request(`http://localhost:3000/api/auth${path}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            })
+          );
+        const signUp = await post("/sign-up/email", {
+          email,
+          password: "password-12345",
+          name: "Magic Link",
+        });
+        expect(signUp.status).toBe(200);
+        expect((await post("/sign-in/magic-link", { email })).status).toBe(200);
+        expect(magicLinkUrl).not.toBe("");
+
+        const verify = await auth.handler(
+          new Request(magicLinkUrl, { redirect: "manual" })
+        );
+        expect(verify.status).toBeLessThan(400);
+        const { internalAdapter } = await auth.$context;
+        const found = await internalAdapter.findUserByEmail(email);
+        expect(found?.user.emailVerified).toBe(true);
+      });
+    });
   });
 }

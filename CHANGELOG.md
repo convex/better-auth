@@ -8,6 +8,13 @@
 - fix: adapter no longer forwards Better Auth 1.7's `modelKey` to Convex
   functions
 - fix: `updateOne` returns null instead of throwing when nothing matches
+- fix: Better Auth 1.7's verification reservations work on Convex, so magic link
+  and email OTP sign-in for an existing unverified user no longer fail
+- fix: `incrementOne` range guards never match unset fields, and
+  `consumeOne`/`incrementOne` return null for an empty where
+- fix: atomic writes aren't faked as misses in query contexts, which could make
+  callers retry forever
+- feat: index `rateLimit.lastRequest` for expired row pruning
 - fix: the `host` header is set for exactly trusted original hosts so dynamic
   `baseURL` configs resolve without `advanced.trustedProxyHeaders`
 - fix: `AuthClient` type is structural so real auth clients are assignable again

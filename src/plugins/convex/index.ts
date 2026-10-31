@@ -271,7 +271,7 @@ export const convex = (opts: {
               //skip
             };
             const knownSafePaths = ["/api-key/list", "/api-key/get"];
-            const noopWrite = (method: string, result: 0 | null = 0) => {
+            const noopWrite = (method: string) => {
               return async (..._args: any[]) => {
                 if (ctx.path && !knownSafePaths.includes(ctx.path)) {
                   // eslint-disable-next-line no-console
@@ -279,7 +279,7 @@ export const convex = (opts: {
                     `[convex-better-auth] Write operation "${method}" skipped in query context for ${ctx.path}`
                   );
                 }
-                return result;
+                return 0;
               };
             };
             ctx.context.adapter.create = noopWrite("create") as any;
@@ -287,15 +287,9 @@ export const convex = (opts: {
             ctx.context.adapter.updateMany = noopWrite("updateMany") as any;
             ctx.context.adapter.delete = noopWrite("delete") as any;
             ctx.context.adapter.deleteMany = noopWrite("deleteMany") as any;
-            // Better Auth 1.7 atomic methods; null means "no row matched".
-            ctx.context.adapter.consumeOne = noopWrite(
-              "consumeOne",
-              null
-            ) as any;
-            ctx.context.adapter.incrementOne = noopWrite(
-              "incrementOne",
-              null
-            ) as any;
+            // consumeOne and incrementOne stay as they are and throw: their
+            // callers act on the result, and a faked miss can make them
+            // retry forever (for example api-key rate limiting).
             return { context: ctx };
           }),
         },

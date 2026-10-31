@@ -118,6 +118,11 @@ const parseWhere = (
         value: w.value.getTime(),
       };
     }
+    // Compare-and-swap guards built from a row's unset field carry
+    // undefined, which Convex can't send; it means the same as null.
+    if (w.value === undefined) {
+      return { ...w, value: null };
+    }
     return w;
   }) as ConvexCleanedWhere[];
 };
@@ -247,6 +252,9 @@ export const convexAdapter = <
         return ids;
       };
 
+      // Requested verification ids mapped to their identifiers (see create).
+      const reservations = new Map<string, string>();
+
       return {
         id: "convex",
         options: {
@@ -266,6 +274,27 @@ export const convexAdapter = <
                   config.authFunctions.onCreate
                 )) as FunctionHandle<"mutation">)
               : undefined;
+          // Better Auth reserves verification values (single-use locks and
+          // replay checks) by inserting a row with a deterministic id, so a
+          // second insert fails on the primary key. Convex assigns its own
+          // ids, so the identifier is the first-writer-wins key instead.
+          const { _id: reservationId, ...createData } = data as {
+            _id?: string;
+            identifier?: string;
+          };
+          if (
+            reservationId !== undefined &&
+            model === "verification" &&
+            createData.identifier !== undefined
+          ) {
+            reservations.set(reservationId, createData.identifier);
+            return ctx.runMutation(api.adapter.create, {
+              input: { model: model as any, data: createData as any },
+              select,
+              unique: ["identifier"],
+              onCreateHandle: onCreateHandle,
+            });
+          }
           return ctx.runMutation(api.adapter.create, {
             input: { model: model as any, data: data as any },
             select,
@@ -276,6 +305,22 @@ export const convexAdapter = <
         // Convex validates arguments strictly, so only the fields the
         // component functions declare are forwarded.
         findOne: async (data): Promise<any> => {
+          // A reservation is read back by the id it was created with.
+          const reservedIdentifier =
+            data.model === "verification" &&
+            data.where?.length === 1 &&
+            data.where[0]?.field === "_id" &&
+            (data.where[0].operator ?? "eq") === "eq" &&
+            typeof data.where[0].value === "string"
+              ? reservations.get(data.where[0].value)
+              : undefined;
+          if (reservedIdentifier !== undefined) {
+            return await ctx.runQuery(api.adapter.findOne, {
+              model: data.model as TableNames,
+              where: [{ field: "identifier", value: reservedIdentifier }],
+              select: data.select,
+            });
+          }
           if (data.where?.every((w) => w.connector === "OR")) {
             for (const w of data.where) {
               const result = await ctx.runQuery(api.adapter.findOne, {
@@ -518,6 +563,10 @@ export const convexAdapter = <
           if (!("runMutation" in ctx)) {
             throw new Error("ctx is not a mutation ctx");
           }
+          // An empty where matches no single record, as with update.
+          if (!data.where.length) {
+            return null;
+          }
           if (data.where.some((w) => w.connector === "OR")) {
             throw new Error("where clause not supported");
           }
@@ -541,6 +590,10 @@ export const convexAdapter = <
           if (!("runMutation" in ctx)) {
             throw new Error("ctx is not a mutation ctx");
           }
+          // An empty where matches no single record, as with update.
+          if (!data.where.length) {
+            return null;
+          }
           if (data.where.some((w) => w.connector === "OR")) {
             throw new Error("where clause not supported");
           }
@@ -551,10 +604,19 @@ export const convexAdapter = <
                   config.authFunctions.onUpdate
                 )) as FunctionHandle<"mutation">)
               : undefined;
+          // Guards follow SQL semantics: lt/lte never match an unset field.
+          // Elsewhere the adapter keeps Convex ordering, where null sorts
+          // first.
+          const where = parseWhere(data.where);
+          const guards = where.flatMap((w) =>
+            (w.operator === "lt" || w.operator === "lte") && w.value !== null
+              ? [{ field: w.field, operator: "ne" as const, value: null }]
+              : []
+          );
           return ctx.runMutation(api.adapter.incrementOne, {
             input: {
               model: data.model as TableNames,
-              where: parseWhere(data.where),
+              where: [...where, ...guards],
               increment: data.increment,
               set: data.set as any,
             },
