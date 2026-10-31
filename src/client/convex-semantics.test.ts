@@ -1487,7 +1487,126 @@ describe("`in` on the first field of a compound index", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 9. Backend behaviour the suite relies on (live deployment only)
+// 9. One-row lookups whose match sits past the row budget
+// ---------------------------------------------------------------------------
+
+describe("one-row lookups past a page of rejected rows", () => {
+  // `paginate` gives each page a budget of PAGE_SIZE rows. When the static
+  // filter rejects every row in that budget the page comes back empty but not
+  // done, and a one-row lookup has to keep reading rather than report no
+  // match.
+  const REJECTED = PAGE_SIZE + 1;
+
+  const seedUnindexed = async (h: Harness) => {
+    await h.insertMany(
+      "nullable",
+      Array.from({ length: REJECTED }, (_, i) => ({
+        plain: `set-${i}`,
+        counter: 0,
+      }))
+    );
+    const [target] = await h.insertMany("nullable", [{ counter: 0 }]);
+    return target!;
+  };
+  const unindexedWhere: Where[] = [
+    { field: "plain", operator: "eq", value: null },
+  ];
+
+  it("findOne finds the row (unindexed scan with `eq null`)", async () => {
+    const h = await setup();
+    const target = await seedUnindexed(h);
+    await expect(
+      h.adapter.findOne<Row>({ model: "nullable", where: unindexedWhere })
+    ).resolves.toMatchObject({ id: target });
+  });
+
+  it("updateOne updates the row", async () => {
+    const h = await setup();
+    const target = await seedUnindexed(h);
+    await expect(
+      h.adapter.update<Row>({
+        model: "nullable",
+        where: unindexedWhere,
+        update: { indexed: "updated" },
+      })
+    ).resolves.toMatchObject({ id: target, indexed: "updated" });
+    const updated = (await h.collect("nullable")).filter(
+      (doc) => doc.indexed === "updated"
+    );
+    expect(docIds(updated)).toEqual([target]);
+  });
+
+  it("incrementOne increments the row", async () => {
+    const h = await setup();
+    const target = await seedUnindexed(h);
+    await expect(
+      h.adapter.incrementOne<Row>({
+        model: "nullable",
+        where: unindexedWhere,
+        increment: { counter: 1 },
+      })
+    ).resolves.toMatchObject({ id: target, counter: 1 });
+    const incremented = (await h.collect("nullable")).filter(
+      (doc) => doc.counter === 1
+    );
+    expect(docIds(incremented)).toEqual([target]);
+  });
+
+  it("consumeOne consumes the row", async () => {
+    const h = await setup();
+    const target = await seedUnindexed(h);
+    await expect(
+      h.adapter.consumeOne<Row>({ model: "nullable", where: unindexedWhere })
+    ).resolves.toMatchObject({ id: target });
+    expect(docIds(await h.collect("nullable"))).not.toContain(target);
+    expect(await h.adapter.count({ model: "nullable" })).toBe(REJECTED);
+  });
+
+  it("deleteOne deletes the row", async () => {
+    const h = await setup();
+    const target = await seedUnindexed(h);
+    await h.adapter.delete({ model: "nullable", where: unindexedWhere });
+    expect(docIds(await h.collect("nullable"))).not.toContain(target);
+    expect(await h.adapter.count({ model: "nullable" })).toBe(REJECTED);
+  });
+
+  it("findOne finds the row (indexed range with a static `eq null`)", async () => {
+    const h = await setup();
+    const now = Date.now();
+    await h.insertMany(
+      "session",
+      Array.from({ length: REJECTED }, (_, i) => ({
+        token: `token-${i}`,
+        userId: "busy-user",
+        ipAddress: "10.0.0.1",
+        expiresAt: now + 60_000,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    );
+    const [target] = await h.insertMany("session", [
+      {
+        token: "token-fresh",
+        userId: "busy-user",
+        expiresAt: now + 60_000,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await expect(
+      h.adapter.findOne<Row>({
+        model: "session",
+        where: [
+          { field: "userId", operator: "eq", value: "busy-user" },
+          { field: "ipAddress", operator: "eq", value: null },
+        ],
+      })
+    ).resolves.toMatchObject({ id: target, token: "token-fresh" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10. Backend behaviour the suite relies on (live deployment only)
 // ---------------------------------------------------------------------------
 
 describe("backend behaviour (live deployment)", () => {
