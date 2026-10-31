@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- table names come in as
+   strings, as in the component's own generic adapter code under src/. */
 // Raw database access for the live harness in src/client/convex-semantics.test.ts:
 // what the convex-test variant does with `t.run`.
 import { mutationGeneric, queryGeneric } from "convex/server";
