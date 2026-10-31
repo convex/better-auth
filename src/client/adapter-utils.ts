@@ -586,9 +586,7 @@ export const paginate = async <
         where: [uniqueWhere],
       }) || {};
     if (uniqueWhere.field !== "_id" && !index) {
-      throw new Error(
-        `No index found for ${args.model}.${uniqueWhere.field}`
-      );
+      throw new Error(`No index found for ${args.model}.${uniqueWhere.field}`);
     }
     const doc =
       uniqueWhere.field === "_id"
@@ -665,24 +663,36 @@ export const paginate = async <
         continueCursor: "",
       };
     }
-    const streams = inWhere.value.map((value) => {
-      return generateQuery(ctx, schema, {
-        ...args,
-        where: args.where?.map((w) => {
-          if (w === inWhere) {
-            return { ...w, operator: "eq", value };
-          }
-          return w;
-        }),
-      });
+    // A repeated value would be a repeated stream, and so repeated rows.
+    const inValues = inWhere.value.filter(
+      (value, idx, all) => all.indexOf(value) === idx
+    );
+    if (!inValues.length) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+    const branchArgs = (value: (typeof inValues)[number]) => ({
+      ...args,
+      where: args.where?.map((w) =>
+        w === inWhere ? { ...w, operator: "eq" as const, value } : w
+      ),
     });
-    const result = await mergedStream(
-      streams,
-      [
-        args.sortBy?.field !== "createdAt" && args.sortBy?.field,
-        "_creationTime",
-      ].flatMap((f) => (f ? [f] : []))
-    ).paginate(paginationOpts);
+    const streams = inValues.map((value) =>
+      generateQuery(ctx, schema, branchArgs(value))
+    );
+    // Every branch binds the same fields, so generateQuery picks the same
+    // index for each of them. convex-helpers merges streams on a key that
+    // must be a suffix of the stream's index fields keeping every field after
+    // the equality prefix, so order the merge by exactly those fields (ending
+    // in _creationTime). `_creationTime` alone is only right when the `in`
+    // field is the last field of its index.
+    const { index, values } = findIndex(schema, branchArgs(inValues[0]!)) ?? {};
+    const mergeFields =
+      index && index.indexDescriptor !== "by_creation_time"
+        ? index.fields.slice(values?.eq.length ?? 0)
+        : ["_creationTime"];
+    const result = await mergedStream(streams, mergeFields).paginate(
+      paginationOpts
+    );
     return {
       ...result,
       page: result.page.map((doc) => selectFields(doc, args.select)),

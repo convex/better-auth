@@ -1372,7 +1372,122 @@ describe("OR connectors mixing indexed and unindexed fields", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 8. Backend behaviour the suite relies on (live deployment only)
+// 8. `in` on a field that is not the last field of its index
+// ---------------------------------------------------------------------------
+
+describe("`in` on the first field of a compound index", () => {
+  // `clientResource` is indexed only by `[clientId, resourceId]`. An `in` on
+  // `clientId` runs one indexed stream per value and merges them, so the
+  // merge has to order by every index field after the equality prefix
+  // (`resourceId`, then `_creationTime`), not by `_creationTime` alone.
+  const seedResources = async (h: Harness) => {
+    const rows = [
+      ["client-1", "resource-c"],
+      ["client-2", "resource-a"],
+      ["client-1", "resource-a"],
+      ["client-3", "resource-b"],
+      ["client-1", "resource-b"],
+      ["client-2", "resource-b"],
+    ] as const;
+    const ids = await h.insertMany(
+      "clientResource",
+      rows.map(([clientId, resourceId]) => ({ clientId, resourceId }))
+    );
+    const byClient = (clientId: string) =>
+      ids.filter((_, i) => rows[i]![0] === clientId);
+    return {
+      matching: [...byClient("client-1"), ...byClient("client-3")].sort(),
+      other: byClient("client-2").sort(),
+    };
+  };
+  // A repeated value must not produce repeated rows.
+  const where: Where[] = [
+    {
+      field: "clientId",
+      operator: "in",
+      value: ["client-1", "client-3", "client-1"],
+    },
+  ];
+
+  it("findMany and count return every matching row exactly once", async () => {
+    const h = await setup();
+    const { matching } = await seedResources(h);
+    const found = await h.adapter.findMany<Row>({
+      model: "clientResource",
+      where,
+    });
+    expect(sortedIds(found)).toEqual(matching);
+    expect(await h.adapter.count({ model: "clientResource", where })).toBe(
+      matching.length
+    );
+  });
+
+  it("orders the merged rows by a sortBy on the next index field", async () => {
+    const h = await setup();
+    await seedResources(h);
+    const asc = await h.adapter.findMany<Row>({
+      model: "clientResource",
+      where,
+      sortBy: { field: "resourceId", direction: "asc" },
+    });
+    expect(asc.map((row) => row.resourceId)).toEqual([
+      "resource-a",
+      "resource-b",
+      "resource-b",
+      "resource-c",
+    ]);
+    const desc = await h.adapter.findMany<Row>({
+      model: "clientResource",
+      where,
+      sortBy: { field: "resourceId", direction: "desc" },
+      limit: 2,
+    });
+    expect(desc.map((row) => row.resourceId)).toEqual([
+      "resource-c",
+      "resource-b",
+    ]);
+  });
+
+  it("updateMany and deleteMany touch every matching row once", async () => {
+    const h = await setup();
+    const { matching, other } = await seedResources(h);
+    expect(
+      await h.adapter.updateMany({
+        model: "clientResource",
+        where,
+        update: { label: "touched" },
+      })
+    ).toBe(matching.length);
+    const touched = (await h.collect("clientResource")).filter(
+      (doc) => doc.label === "touched"
+    );
+    expect(docIds(touched)).toEqual(matching);
+    expect(await h.adapter.deleteMany({ model: "clientResource", where })).toBe(
+      matching.length
+    );
+    expect(docIds(await h.collect("clientResource"))).toEqual(other);
+  });
+
+  it("findOne narrows the branches with a further eq", async () => {
+    const h = await setup();
+    const { matching } = await seedResources(h);
+    // client-1 and client-3 both have resource-b; client-2's must not match.
+    const found = await h.adapter.findOne<Row>({
+      model: "clientResource",
+      where: [
+        ...where,
+        { field: "resourceId", operator: "eq", value: "resource-b" },
+      ],
+    });
+    expect(found).not.toBeNull();
+    expect(matching).toContain(found!.id);
+    expect(found!.resourceId).toBe("resource-b");
+    expect(["client-1", "client-3"]).toContain(found!.clientId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9. Backend behaviour the suite relies on (live deployment only)
 // ---------------------------------------------------------------------------
 
 describe("backend behaviour (live deployment)", () => {
