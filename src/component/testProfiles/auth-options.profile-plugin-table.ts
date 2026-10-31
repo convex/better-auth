@@ -54,6 +54,30 @@ export const pluginTableProfileOptions = {
       },
     },
     {
+      // Table-level unique index (Better Auth 1.7 `indexes`), as declared by
+      // e.g. the device-authorization and oauth-provider plugins.
+      id: "compound-unique-test",
+      schema: {
+        compoundUnique: {
+          fields: {
+            groupId: {
+              type: "string",
+              required: true,
+            },
+            slot: {
+              type: "string",
+              required: true,
+            },
+            label: {
+              type: "string",
+              required: false,
+            },
+          },
+          indexes: [{ fields: ["groupId", "slot"], unique: true }],
+        },
+      },
+    },
+    {
       id: "plugin-table-test-model",
       schema: {
         testModel: {

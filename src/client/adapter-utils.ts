@@ -58,34 +58,57 @@ export const adapterArgsValidator = v.object({
   offset: v.optional(v.number()),
 });
 
+// Unique constraints of a model, as tuples of Convex field names: field-level
+// `unique: true` fields, plus table-level unique indexes (Better Auth 1.7
+// `indexes: [{ fields, unique: true }]`, used by e.g. device-authorization
+// and oauth-provider plugins).
+const getUniqueConstraints = (
+  betterAuthSchema: BetterAuthDBSchema,
+  model: string
+): string[][] => {
+  const table = Object.values(betterAuthSchema).find(
+    (value) => value.modelName === model
+  );
+  if (!table) {
+    return [];
+  }
+  const fieldName = (key: string) => table.fields[key]?.fieldName ?? key;
+  const fieldConstraints = Object.entries(table.fields)
+    .filter(([, value]) => value.unique)
+    .map(([key]) => [fieldName(key)]);
+  const indexConstraints = (table.indexes ?? [])
+    .filter((index) => index.unique)
+    .map((index) => index.fields.map(fieldName));
+  return [...fieldConstraints, ...indexConstraints];
+};
+// A field is unique on its own only via a single-field constraint; being part
+// of a compound unique index does not make its values unique.
 const isUniqueField = (
   betterAuthSchema: BetterAuthDBSchema,
   model: string,
   field: string
-) => {
-  const fields = Object.values(betterAuthSchema).find(
-    (value) => value.modelName === model
-  )?.fields;
-  if (!fields) {
-    return false;
-  }
-  return Object.entries(fields)
-    .filter(([, value]) => value.unique)
-    .map(([key]) => key)
-    .includes(field);
-};
+) =>
+  getUniqueConstraints(betterAuthSchema, model).some(
+    (constraint) => constraint.length === 1 && constraint[0] === field
+  );
+// Whether the input sets every field of some unique constraint, i.e. writing
+// it to more than one document would violate that constraint.
 export const hasUniqueFields = (
   betterAuthSchema: BetterAuthDBSchema,
   model: string,
   input: Record<string, any>
 ) => {
-  for (const field of Object.keys(input)) {
-    if (isUniqueField(betterAuthSchema, model, field)) {
-      return true;
-    }
-  }
-  return false;
+  return getUniqueConstraints(betterAuthSchema, model).some((constraint) =>
+    constraint.every((field) => field in input)
+  );
 };
+
+// `eq null` must match unset fields as well as explicit nulls (SQL `IS NULL`):
+// Convex omits never-written optional fields, and the 1.7 adapter factory
+// drops undefined fields from writes. A Convex index range `q.eq(field, null)`
+// only matches explicit nulls, so these clauses are always filtered statically.
+const isNullEq = (w: { operator?: string; value: unknown }) =>
+  (!w.operator || w.operator === "eq") && w.value === null;
 
 const findIndex = (
   schema: SchemaDefinition<any, any>,
@@ -129,7 +152,8 @@ const findIndex = (
         ["lt", "lte", "gt", "gte", "eq", "in", "not_in"].includes(
           w.operator
         )) &&
-      w.field !== "_id"
+      w.field !== "_id" &&
+      !isNullEq(w)
     );
   });
   if (!where?.length && !args.sortBy) {
@@ -246,31 +270,45 @@ export const checkUniqueFields = async <
   input: Record<string, any>,
   doc?: Record<string, any>
 ) => {
-  if (!hasUniqueFields(betterAuthSchema, table, input)) {
-    return;
-  }
-  for (const field of Object.keys(input)) {
-    if (!isUniqueField(betterAuthSchema, table, field)) {
+  // On update, the constraint applies to the document as it will be after
+  // the write.
+  const merged: Record<string, any> = { ...doc, ...input };
+  for (const constraint of getUniqueConstraints(betterAuthSchema, table)) {
+    // Only constraints this write touches can newly conflict, and a tuple
+    // with a missing or null member is not constrained (SQL semantics).
+    if (
+      !constraint.some((field) => field in input) ||
+      constraint.some(
+        (field) => merged[field] === undefined || merged[field] === null
+      )
+    ) {
       continue;
     }
     const { index } =
       findIndex(schema, {
         model: table,
-        where: [
-          { field, operator: "eq", value: input[field as keyof typeof input] },
-        ],
+        where: constraint.map((field) => ({
+          field,
+          operator: "eq" as const,
+          value: merged[field],
+        })),
       }) || {};
     if (!index) {
-      throw new Error(`No index found for ${table}${field}`);
+      throw new Error(`No index found for ${table}.${constraint.join("_")}`);
     }
-    const existingDoc = await ctx.db
+    // findIndex matched the constraint fields as the index prefix.
+    const prefixFields = index.fields.slice(0, constraint.length);
+    const existingDocs = await ctx.db
       .query(table as any)
       .withIndex(index.indexDescriptor, (q) =>
-        q.eq(field, input[field as keyof typeof input])
+        prefixFields.reduce(
+          (range: any, field: string) => range.eq(field, merged[field]),
+          q
+        )
       )
-      .unique();
-    if (existingDoc && existingDoc._id !== doc?._id) {
-      throw new Error(`${table} ${field} already exists`);
+      .take(2);
+    if (existingDocs.some((existingDoc) => existingDoc._id !== doc?._id)) {
+      throw new Error(`${table} ${constraint.join("_")} already exists`);
     }
   }
 };
@@ -343,7 +381,7 @@ const filterByWhere = <
       switch (w.operator) {
         case undefined:
         case "eq": {
-          return value === w.value;
+          return w.value === null ? value == null : value === w.value;
         }
         case "in": {
           return Array.isArray(w.value) && (w.value as any[]).includes(value);
@@ -366,7 +404,8 @@ const filterByWhere = <
           return value === w.value || isGreaterThan(value, w.value);
         }
         case "ne": {
-          return value !== w.value;
+          // `ne null` is SQL `IS NOT NULL`: unset fields don't match either.
+          return w.value === null ? value != null : value !== w.value;
         }
         case "contains": {
           return typeof value === "string" && value.includes(w.value as string);
@@ -454,10 +493,11 @@ const generateQuery = (
       // Index used for all eq and range clauses, apply remaining clauses
       // incompatible with Convex statically.
       (w) =>
-        w.operator &&
-        ["contains", "starts_with", "ends_with", "ne", "not_in"].includes(
-          w.operator
-        )
+        isNullEq(w) ||
+        (w.operator &&
+          ["contains", "starts_with", "ends_with", "ne", "not_in"].includes(
+            w.operator
+          ))
     );
   });
   return filteredQuery;
@@ -508,6 +548,8 @@ export const paginate = async <
   const uniqueWhere = args.where?.find(
     (w) =>
       (!w.operator || w.operator === "eq") &&
+      // `eq null` can't use the index (see isNullEq) and may match many docs.
+      w.value !== null &&
       (isUniqueField(betterAuthSchema, args.model, w.field) ||
         w.field === "_id")
   );
