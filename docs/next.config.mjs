@@ -11,6 +11,17 @@ const config = {
   reactStrictMode: true,
   redirects: async () => {
     return [
+      // Migration guides were consolidated into the Upgrading section
+      {
+        source: "/migrations",
+        destination: "/upgrading",
+        permanent: true,
+      },
+      {
+        source: "/migrations/:path*",
+        destination: "/upgrading",
+        permanent: true,
+      },
       {
         source: "/local-install",
         destination: "/features/local-install",

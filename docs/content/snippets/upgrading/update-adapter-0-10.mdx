@@ -1,0 +1,33 @@
+<div className="fd-step">
+
+### Update adapter
+
+Replace usage of `createAuth` with `createAuthOptions` in `adapter.ts`, and
+export the `consumeOne` and `incrementOne` functions that Better Auth 1.7 adds.
+
+You'll also drop the removed `migrationRemoveUserId` function.
+
+```ts title="convex/betterAuth/adapter.ts"
+import { createApi } from "@convex-dev/better-auth";
+import {
+  createAuth, // [!code --]
+  createAuthOptions, // [!code ++]
+} from "../auth";
+import schema from "./schema";
+
+export const {
+  create,
+  findOne,
+  findMany,
+  updateOne,
+  updateMany,
+  deleteOne,
+  deleteMany,
+  migrationRemoveUserId, // [!code --]
+  consumeOne, // [!code ++]
+  incrementOne, // [!code ++]
+} = createApi(schema, createAuth); // [!code --]
+} = createApi(schema, createAuthOptions); // [!code ++]
+```
+
+</div>

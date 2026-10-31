@@ -1,0 +1,25 @@
+<div className="fd-step">
+
+### Use `customJwt` auth config
+
+[`customJwt` auth config](https://docs.convex.dev/auth/advanced/custom-jwt) is
+now recommended for faster JWT validation. A helper is provided to generate the
+config object.
+
+```ts title="convex/auth.config.ts"
+import type { AuthConfig } from "convex/server";
+import { getAuthConfigProvider } from "@convex-dev/better-auth/auth-config";
+
+export default {
+  providers: [
+    getAuthConfigProvider(), // [!code ++]
+    // [!code --:4]
+    {
+      applicationID: "convex",
+      domain: process.env.CONVEX_SITE_URL!,
+    },
+  ],
+} satisfies AuthConfig;
+```
+
+</div>

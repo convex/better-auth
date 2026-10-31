@@ -289,6 +289,248 @@ export const convexCustomTestSuite = createTestSuite(
       ).toHaveLength(300);
     },
 
+    "should read each row exactly once when a filtered page is split":
+      async () => {
+        // 4 non-matching rows first, then 205 matching: the static
+        // starts_with filter has to read more than maximumRowsRead rows to
+        // fill the first 200-item page, so the page is split. Resuming from
+        // splitCursor instead of continueCursor re-reads the second half of
+        // the split page.
+        for (let i = 0; i < 4; i++) {
+          await adapter.create({
+            model: "user",
+            data: { name: `other-${i}`, email: `other-${i}@bar.com` },
+          });
+        }
+        for (let i = 0; i < 205; i++) {
+          await adapter.create({
+            model: "user",
+            data: { name: `fixture-${i}`, email: `fixture-${i}@bar.com` },
+          });
+        }
+        const where = [
+          {
+            field: "email",
+            operator: "starts_with" as const,
+            value: "fixture-",
+          },
+        ];
+        expect(await adapter.count({ model: "user", where })).toBe(205);
+        const rows = await adapter.findMany<{ id: string }>({
+          model: "user",
+          where,
+          limit: 1000,
+        });
+        expect(rows).toHaveLength(205);
+        expect(new Set(rows.map((row) => row.id)).size).toBe(205);
+        // A limit above the match count must not be filled with duplicates.
+        const limited = await adapter.findMany<{ id: string }>({
+          model: "user",
+          where,
+          limit: 300,
+        });
+        expect(new Set(limited.map((row) => row.id)).size).toBe(205);
+        expect(limited).toHaveLength(205);
+        expect(
+          await adapter.updateMany({
+            model: "user",
+            where,
+            update: { name: "updated" },
+          }),
+        ).toBe(205);
+        expect(
+          (
+            await adapter.findMany({
+              model: "user",
+              where: [{ field: "name", value: "updated" }],
+              limit: 1000,
+            })
+          ).length,
+        ).toBe(205);
+        expect(await adapter.deleteMany({ model: "user", where })).toBe(205);
+        expect(await adapter.count({ model: "user" })).toBe(4);
+      },
+
+    "should match unset optional fields with eq null but not ne null":
+      async () => {
+        // Convex omits never-written fields, and the 1.7 adapter factory
+        // drops undefined fields from input, so `image` is absent here.
+        const unset = await adapter.create({
+          model: "user",
+          data: { name: "unset", email: "unset@bar.com" },
+        });
+        const explicitNull = await adapter.create({
+          model: "user",
+          data: { name: "null", email: "null@bar.com", image: null },
+        });
+        const withImage = await adapter.create({
+          model: "user",
+          data: { name: "image", email: "image@bar.com", image: "img.png" },
+        });
+        expect(
+          await adapter.findOne({
+            model: "user",
+            where: [
+              { field: "id", value: unset.id },
+              { field: "image", value: null },
+            ],
+          }),
+        ).toEqual(unset);
+        expect(
+          await adapter.findOne({
+            model: "user",
+            where: [
+              { field: "id", value: explicitNull.id },
+              { field: "image", operator: "eq", value: null },
+            ],
+          }),
+        ).toEqual(explicitNull);
+        expect(
+          await adapter.findOne({
+            model: "user",
+            where: [
+              { field: "id", value: withImage.id },
+              { field: "image", value: null },
+            ],
+          }),
+        ).toBeNull();
+        expect(
+          await adapter.findOne({
+            model: "user",
+            where: [
+              { field: "id", value: unset.id },
+              { field: "image", operator: "ne", value: null },
+            ],
+          }),
+        ).toBeNull();
+        expect(
+          await adapter.findOne({
+            model: "user",
+            where: [
+              { field: "id", value: withImage.id },
+              { field: "image", operator: "ne", value: null },
+            ],
+          }),
+        ).toEqual(withImage);
+        const nulls = await adapter.findMany<{ id: string }>({
+          model: "user",
+          where: [{ field: "image", value: null }],
+        });
+        expect(nulls.map((user) => user.id).sort()).toEqual(
+          [unset.id, explicitNull.id].sort(),
+        );
+        expect(
+          await adapter.findMany({
+            model: "user",
+            where: [{ field: "image", operator: "ne", value: null }],
+          }),
+        ).toEqual([withImage]);
+      },
+
+    "should apply eq null statically alongside an indexed eq": async () => {
+      // session.userId is indexed; ipAddress is optional and often unset.
+      const now = Date.now();
+      const base = {
+        expiresAt: now + 60_000,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const unset = await adapter.create({
+        model: "session",
+        data: { ...base, token: "a", userId: "user-1" },
+      });
+      const set = await adapter.create({
+        model: "session",
+        data: { ...base, token: "b", userId: "user-1", ipAddress: "::1" },
+      });
+      const explicitNull = await adapter.create({
+        model: "session",
+        data: { ...base, token: "c", userId: "user-1", ipAddress: null },
+      });
+      await adapter.create({
+        model: "session",
+        data: { ...base, token: "d", userId: "user-2" },
+      });
+      const nulls = await adapter.findMany<{ id: string }>({
+        model: "session",
+        where: [
+          { field: "userId", value: "user-1" },
+          { field: "ipAddress", value: null },
+        ],
+      });
+      expect(nulls.map((session) => session.id).sort()).toEqual(
+        [unset.id, explicitNull.id].sort(),
+      );
+      expect(
+        await adapter.findMany({
+          model: "session",
+          where: [
+            { field: "userId", value: "user-1" },
+            { field: "ipAddress", operator: "ne", value: null },
+          ],
+        }),
+      ).toEqual([set]);
+      expect(
+        await adapter.count({
+          model: "session",
+          where: [
+            { field: "ipAddress", value: null },
+            { field: "userId", value: "user-1" },
+          ],
+        }),
+      ).toBe(2);
+    },
+
+    "should honor an eq null guard in incrementOne": async () => {
+      // Mirrors the device-authorization plugin approving a device code:
+      // incrementOne with a `userId eq null` guard on a never-set field.
+      const user = await adapter.create({
+        model: "user",
+        data: { name: "foo", email: "foo@bar.com" },
+      });
+      const now = Date.now();
+      const account = await adapter.create({
+        model: "account",
+        data: {
+          accountId: "acct",
+          providerId: "credential",
+          userId: user.id,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      type Account = { id: string; accessToken: string | null };
+      const where = [
+        { field: "id", value: account.id },
+        { field: "accessToken", value: null },
+      ];
+      const claimed = await adapter.incrementOne<Account>({
+        model: "account",
+        where,
+        increment: {},
+        set: { accessToken: "token-1" },
+      });
+      expect(claimed?.id).toBe(account.id);
+      expect(claimed?.accessToken).toBe("token-1");
+      // The guard no longer matches once the field is set.
+      expect(
+        await adapter.incrementOne<Account>({
+          model: "account",
+          where,
+          increment: {},
+          set: { accessToken: "token-2" },
+        }),
+      ).toBeNull();
+      expect(
+        (
+          await adapter.findOne<Account>({
+            model: "account",
+            where: [{ field: "id", value: account.id }],
+          })
+        )?.accessToken,
+      ).toBe("token-1");
+    },
+
     "should support select in findMany": async () => {
       await adapter.create({
         model: "user",
@@ -760,6 +1002,39 @@ export const convexCustomTestSuite = createTestSuite(
       ).toEqual(user);
       expect(typeof user.createdAt).toBe("number");
     },
+
+    "should find a single row past a page of statically rejected rows":
+      async () => {
+        // `image eq null` is a static filter over an unindexed scan. The
+        // component reads 200 rows per page, so the only matching row sits
+        // past a page that rejected every row it read.
+        for (let i = 0; i < 201; i++) {
+          await adapter.create({
+            model: "user",
+            data: {
+              name: `pictured-${i}`,
+              email: `pictured-${i}@example.test`,
+              image: "https://example.test/avatar.png",
+            },
+          });
+        }
+        const target = await adapter.create({
+          model: "user",
+          data: { name: "unpictured", email: "unpictured@example.test" },
+        });
+        const where = [
+          { field: "image", operator: "eq" as const, value: null },
+        ];
+        expect(await adapter.findOne({ model: "user", where })).toEqual(target);
+        expect(
+          await adapter.update({
+            model: "user",
+            where,
+            update: { name: "found" },
+          }),
+        ).toMatchObject({ id: target.id, name: "found" });
+        expect(await adapter.count({ model: "user", where })).toBe(1);
+      },
 
     "should reject case-insensitive where clauses": async () => {
       await adapter.create({

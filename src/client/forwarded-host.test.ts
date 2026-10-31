@@ -104,4 +104,83 @@ describe("forwarded host restore with dynamic baseURL", async () => {
     });
     expect(url.host).toBe(APP_HOST);
   });
+
+  it("ignores a forwarded host that is not restored by the component", async () => {
+    // A bare x-forwarded-host (no x-better-auth-forwarded-*) is not trusted
+    // by Better Auth 1.7 without advanced.trustedProxyHeaders, and the
+    // component does not rewrite host for it.
+    const url = await requestReset({
+      "x-forwarded-host": ADMIN_HOST,
+    });
+    expect(url.host).toBe(APP_HOST);
+  });
+});
+
+describe("restoreOriginalForwardedHeaders header rewrite", () => {
+  const trusted = new Set([ADMIN_HOST]);
+  const http = httpRouter();
+  const seen: Request[] = [];
+  const auth = {
+    options: {
+      basePath: "/api/auth",
+      trustedOrigins: [`https://${ADMIN_HOST}`],
+    },
+    $context: Promise.resolve({
+      trustedOrigins: [`https://${ADMIN_HOST}`],
+      options: { trustedOrigins: [`https://${ADMIN_HOST}`] },
+    }),
+    handler: async (request: Request) => {
+      seen.push(request);
+      return new Response("ok");
+    },
+  };
+  createClient(component).registerRoutes(http, () => auth as any);
+  const route = http.lookup("/api/auth/get-session", "GET")!;
+  const handler = (route[0] as any)._handler as (
+    ctx: unknown,
+    request: Request
+  ) => Promise<Response>;
+  const send = async (headers: Record<string, string>) => {
+    seen.length = 0;
+    await handler(
+      {},
+      new Request(`${CONVEX_SITE}/api/auth/get-session`, {
+        headers: {
+          host: new URL(CONVEX_SITE).host,
+          "x-forwarded-host": new URL(CONVEX_SITE).host,
+          "x-forwarded-proto": "https",
+          ...headers,
+        },
+      })
+    );
+    return seen[0]!.headers;
+  };
+
+  it("rewrites host and x-forwarded-* for an exactly trusted original host", async () => {
+    const headers = await send({
+      "x-better-auth-forwarded-host": ADMIN_HOST,
+      "x-better-auth-forwarded-proto": "https",
+    });
+    expect(headers.get("host")).toBe(ADMIN_HOST);
+    expect(headers.get("x-forwarded-host")).toBe(ADMIN_HOST);
+    expect(headers.get("x-forwarded-proto")).toBe("https");
+    expect(trusted.has(ADMIN_HOST)).toBe(true);
+  });
+
+  it("leaves every header alone for an untrusted original host", async () => {
+    const headers = await send({
+      "x-better-auth-forwarded-host": PREVIEW_HOST,
+      "x-better-auth-forwarded-proto": "https",
+    });
+    expect(headers.get("host")).toBe(new URL(CONVEX_SITE).host);
+    expect(headers.get("x-forwarded-host")).toBe(new URL(CONVEX_SITE).host);
+  });
+
+  it("leaves every header alone when the protocol is not http or https", async () => {
+    const headers = await send({
+      "x-better-auth-forwarded-host": ADMIN_HOST,
+      "x-better-auth-forwarded-proto": "javascript",
+    });
+    expect(headers.get("host")).toBe(new URL(CONVEX_SITE).host);
+  });
 });

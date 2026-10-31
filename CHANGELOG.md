@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.13.0
+
+- feat: support Better Auth 1.7 (minimum 1.7.14)
+- feat: native `consumeOne` and `incrementOne` adapter methods for Better Auth
+  1.7's atomic verification consume and counter updates
+- fix: adapter no longer forwards Better Auth 1.7's `modelKey` to Convex
+  functions
+- fix: `updateOne` returns null instead of throwing when nothing matches
+- fix: the `host` header is set for exactly trusted original hosts so dynamic
+  `baseURL` configs resolve without `advanced.trustedProxyHeaders`
+- fix: `AuthClient` type is structural so real auth clients are assignable again
+- breaking: the Convex plugin serves its OpenID discovery document directly; the
+  removed `oidcProvider` plugin's `oauthApplication`, `oauthAccessToken` and
+  `oauthConsent` tables are no longer in the component schema (data is kept, see
+  the Upgrading guide)
+- breaking: Convex plugin endpoint keys renamed to `getConvexToken`,
+  `getConvexJwks` and `getConvexOpenIdConfig` to avoid being shadowed by the
+  `jwt` and `oauth-provider` plugins (#395); HTTP paths are unchanged
+
 ## 0.12.6
 
 - fix: cross-domain one-time tokens are only issued to exact trusted origins

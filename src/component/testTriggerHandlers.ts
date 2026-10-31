@@ -25,3 +25,16 @@ export const sessionOnUpdateUpdater = internalMutationGeneric({
     }
   },
 });
+
+// Appends a marker to `user.image` on every onUpdate call so a test can tell
+// how many times a row's onUpdate trigger fired (an "x" per firing).
+export const userOnUpdateMarker = internalMutationGeneric({
+  args: { newDoc: v.any(), oldDoc: v.any(), model: v.string() },
+  handler: async (ctx, args) => {
+    if (args.model === "user") {
+      await ctx.db.patch("user", args.newDoc._id, {
+        image: `${args.oldDoc.image ?? ""}x`,
+      });
+    }
+  },
+});

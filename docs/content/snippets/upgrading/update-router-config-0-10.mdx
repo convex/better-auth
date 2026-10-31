@@ -1,0 +1,54 @@
+<div className="fd-step">
+
+### Update router config
+
+Update the router to set `expectAuth: true` on the ConvexQueryClient - without
+this, authenticated data from server render is lost immediately after first
+render.
+
+Also drop the unused `Wrap` provider (if you have one).
+
+```tsx title="src/router.tsx"
+export function getRouter() {
+  const convexUrl = (import.meta as any).env.VITE_CONVEX_URL!;
+  if (!convexUrl) {
+    throw new Error("VITE_CONVEX_URL is not set");
+  }
+  const convexQueryClient = new ConvexQueryClient(convexUrl, {
+    expectAuth: true, // [!code ++]
+  });
+
+  const queryClient: QueryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        queryKeyHashFn: convexQueryClient.hashFn(),
+        queryFn: convexQueryClient.queryFn(),
+      },
+    },
+  });
+  convexQueryClient.connect(queryClient);
+
+  const router = createTanStackRouter({
+    routeTree,
+    defaultPreload: "intent",
+    defaultErrorComponent: DefaultCatchBoundary,
+    defaultNotFoundComponent: () => <NotFound />,
+    // [!code --:5]
+    Wrap: ({ children }) => (
+      <ConvexProvider client={convexQueryClient.convexClient}>
+        {children}
+      </ConvexProvider>
+    ),
+    context: { queryClient, convexQueryClient },
+    scrollRestoration: true,
+  });
+  setupRouterSsrQueryIntegration({
+    router,
+    queryClient,
+  });
+
+  return router;
+}
+```
+
+</div>

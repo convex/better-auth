@@ -1,0 +1,18 @@
+<div className="fd-step">
+
+### Set `baseURL` for client-side frameworks
+
+If your app uses the cross-domain plugin (e.g., Vite SPA, Expo Web), add
+`baseURL` to your `betterAuth()` options so Better Auth doesn't have to infer it
+from each request.
+
+```ts title="convex/auth.ts"
+betterAuth({
+  baseURL: process.env.CONVEX_SITE_URL, // [!code ++]
+  // ...
+});
+```
+
+Next.js and TanStack Start setups already set `baseURL` and are not affected.
+
+</div>

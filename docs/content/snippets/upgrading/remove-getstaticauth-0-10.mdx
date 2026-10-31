@@ -1,0 +1,24 @@
+<div className="fd-step">
+
+### Remove `getStaticAuth`
+
+Remove `getStaticAuth` in `convex/betterAuth/auth.ts` and replace it with a
+simple `createAuth`
+
+<Callout>
+  This file should _only_ have your `auth` export for schema generation, and no
+  other code. If this file is imported at runtime it will trigger errors due to
+  missing environment variables.
+</Callout>
+
+```ts title="convex/betterAuth/auth.ts"
+import { getStaticAuth } from "@convex-dev/better-auth"; // [!code --]
+import { v } from "convex/values";
+import { createAuth } from "../auth";
+
+// Export a static instance for Better Auth schema generation
+export const auth = getStaticAuth(createAuth); // [!code --]
+export const auth = createAuth({} as any); // [!code ++]
+```
+
+</div>

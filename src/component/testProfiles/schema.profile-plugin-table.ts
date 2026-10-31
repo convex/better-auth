@@ -60,6 +60,12 @@ const testModelTable = defineTable({
   json: v.optional(v.any()),
 }).index("nullableReference", ["nullableReference"]);
 
+const compoundUniqueTable = defineTable({
+  groupId: v.string(),
+  slot: v.string(),
+  label: v.optional(v.union(v.null(), v.string())),
+}).index("groupId_slot", ["groupId", "slot"]);
+
 const organizationTable = defineTable({
   name: v.string(),
   slug: v.string(),
@@ -83,6 +89,7 @@ const memberTable = defineTable({
 
 const teamTable = defineTable({
   name: v.string(),
+  memberCount: v.number(),
   organizationId: v.string(),
   createdAt: v.number(),
   updatedAt: v.optional(v.union(v.null(), v.number())),
@@ -93,10 +100,12 @@ const teamTable = defineTable({
 const teamMemberTable = defineTable({
   teamId: v.string(),
   userId: v.string(),
+  membershipKey: v.optional(v.union(v.null(), v.string())),
   createdAt: v.optional(v.union(v.null(), v.number())),
 })
   .index("teamId", ["teamId"])
-  .index("userId", ["userId"]);
+  .index("userId", ["userId"])
+  .index("membershipKey", ["membershipKey"]);
 
 const invitationTable = defineTable({
   email: v.optional(v.union(v.null(), v.string())),
@@ -120,6 +129,7 @@ const schema = defineSchema({
   oneToOneTable,
   one_to_one_table: oneToOneTableRenamed,
   testModel: testModelTable,
+  compoundUnique: compoundUniqueTable,
   organization: organizationTable,
   member: memberTable,
   team: teamTable,

@@ -68,6 +68,8 @@ type SlimComponentApi = {
     updateMany: FunctionReference<"mutation", "internal">;
     deleteOne: FunctionReference<"mutation", "internal">;
     deleteMany: FunctionReference<"mutation", "internal">;
+    consumeOne: FunctionReference<"mutation", "internal">;
+    incrementOne: FunctionReference<"mutation", "internal">;
   };
 };
 
@@ -124,9 +126,16 @@ const exactTrustedHosts = async (
 };
 
 // The framework proxy handlers send the original host and protocol in
-// x-better-auth-forwarded-* headers. Restore them into x-forwarded-* only
-// when the host is one the app lists exactly in trustedOrigins and the
-// protocol is http or https. Both are restored or neither is.
+// x-better-auth-forwarded-* headers. Restore them only when the host is one
+// the app lists exactly in trustedOrigins and the protocol is http or https.
+// All are restored or none is.
+//
+// `host` is rewritten because Better Auth 1.7 reads it (not x-forwarded-host)
+// when resolving a dynamic `baseURL` with `allowedHosts`, unless the app opts
+// in to `advanced.trustedProxyHeaders`. The x-forwarded-* pair is still
+// written for apps that do opt in. Inside a Convex HTTP action the incoming
+// `host` is the deployment's own host, which an `allowedHosts` list would
+// reject, so this puts back what Better Auth would see on a direct deploy.
 const restoreOriginalForwardedHeaders = (
   request: Request,
   trustedHosts: Set<string>
@@ -141,6 +150,7 @@ const restoreOriginalForwardedHeaders = (
     return request;
   }
   const headers = new Headers(request.headers);
+  headers.set("host", originalHost);
   headers.set("x-forwarded-host", originalHost);
   headers.set("x-forwarded-proto", originalProto);
   return new Request(request, { headers });

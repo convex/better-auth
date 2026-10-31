@@ -14,13 +14,11 @@ import type { SetOptional } from "type-fest";
 import type defaultSchema from "../component/schema.js";
 import type { Where } from "better-auth/types";
 import { asyncMap } from "convex-helpers";
-import { prop, sortBy } from "remeda";
 import { isRunMutationCtx } from "../utils/index.js";
+import { compareSortValues } from "./adapter-utils.js";
 import type { Doc, TableNames } from "../component/_generated/dataModel.js";
 import type { ComponentApi } from "../component/_generated/component.js";
 import type { AuthFunctions, GenericCtx, Triggers } from "./index.js";
-
-let didWarnExperimentalJoinsUnsupported = false;
 
 const handlePagination = async (
   next: ({
@@ -46,11 +44,10 @@ const handlePagination = async (
   const onResult = (
     result: SetOptional<PaginationResult<any>, "page"> & { count?: number }
   ) => {
-    state.cursor =
-      result.pageStatus === "SplitRecommended" ||
-      result.pageStatus === "SplitRequired"
-        ? (result.splitCursor ?? result.continueCursor)
-        : result.continueCursor;
+    // Always continue from continueCursor. splitCursor points mid-page, so
+    // resuming from it re-reads the second half of a split page and returns
+    // (or updates/deletes) those rows twice.
+    state.cursor = result.continueCursor;
     if (result.page) {
       state.docs.push(...result.page);
       state.isDone = (limit && state.docs.length >= limit) || result.isDone;
@@ -228,19 +225,6 @@ export const convexAdapter = <
     adapter: ({ options }) => {
       // Disable telemetry in all cases because it requires Node
       options.telemetry = { enabled: false };
-      if (options.experimental?.joins) {
-        options.experimental = {
-          ...options.experimental,
-          joins: false,
-        };
-        if (!didWarnExperimentalJoinsUnsupported) {
-          didWarnExperimentalJoinsUnsupported = true;
-          // eslint-disable-next-line no-console
-          console.warn(
-            "[convex-better-auth] Better Auth experimental.joins is not supported by the Convex adapter yet. Forcing experimental.joins = false."
-          );
-        }
-      }
 
       const collectIdsForOrWhere = async (data: {
         model: string;
@@ -283,18 +267,22 @@ export const convexAdapter = <
                 )) as FunctionHandle<"mutation">)
               : undefined;
           return ctx.runMutation(api.adapter.create, {
-            input: { model: model as any, data },
+            input: { model: model as any, data: data as any },
             select,
             onCreateHandle: onCreateHandle,
           });
         },
+        // Better Auth 1.7 passes `modelKey` alongside `model` on every call.
+        // Convex validates arguments strictly, so only the fields the
+        // component functions declare are forwarded.
         findOne: async (data): Promise<any> => {
           if (data.where?.every((w) => w.connector === "OR")) {
             for (const w of data.where) {
               const result = await ctx.runQuery(api.adapter.findOne, {
-                ...data,
                 model: data.model as TableNames,
                 where: parseWhere(w),
+                select: data.select,
+                join: data.join,
               });
               if (result) {
                 return result;
@@ -302,9 +290,10 @@ export const convexAdapter = <
             }
           }
           return await ctx.runQuery(api.adapter.findOne, {
-            ...data,
             model: data.model as TableNames,
             where: parseWhere(data.where),
+            select: data.select,
+            join: data.join,
           });
         },
         findMany: async (data): Promise<any[]> => {
@@ -315,14 +304,15 @@ export const convexAdapter = <
           if (data.where?.some((w) => w.connector === "OR")) {
             // Always fetch full docs for OR unions so we can dedupe
             // by id and sort/limit before trimming selected fields.
-            const { select: _ignoredSelect, ...queryData } = data;
             const results = await asyncMap(data.where, async (w) =>
               handlePagination(
                 async ({ paginationOpts }) => {
                   return await ctx.runQuery(api.adapter.findMany, {
-                    ...queryData,
                     model: data.model as TableNames,
                     where: parseWhere(w),
+                    limit: data.limit,
+                    sortBy: data.sortBy,
+                    join: data.join,
                     paginationOpts,
                   });
                 },
@@ -331,10 +321,10 @@ export const convexAdapter = <
             );
             let docs = dedupeDocsById(results.flatMap((r) => r.docs));
             if (data.sortBy) {
-              docs = sortBy(docs, [
-                prop(data.sortBy.field),
-                data.sortBy.direction,
-              ]);
+              const { field, direction } = data.sortBy;
+              docs = [...docs].sort((a, b) =>
+                compareSortValues(a[field], b[field], direction)
+              );
             }
             if (data.limit !== undefined) {
               docs = docs.slice(0, data.limit);
@@ -345,15 +335,21 @@ export const convexAdapter = <
           const result = await handlePagination(
             async ({ paginationOpts }) => {
               return await ctx.runQuery(api.adapter.findMany, {
-                ...data,
                 model: data.model as TableNames,
                 where: parseWhere(data.where),
+                select: data.select,
+                limit: data.limit,
+                sortBy: data.sortBy,
+                join: data.join,
                 paginationOpts,
               });
             },
             { limit: data.limit }
           );
-          return result.docs;
+          // Pages should never overlap, but a duplicate here would be
+          // returned to the caller (and consume its limit), so dedupe as the
+          // OR path does.
+          return dedupeDocsById(result.docs);
         },
         count: async (data) => {
           // Yes, count is just findMany returning a number.
@@ -361,7 +357,6 @@ export const convexAdapter = <
             const results = await asyncMap(data.where, async (w) =>
               handlePagination(async ({ paginationOpts }) => {
                 return await ctx.runQuery(api.adapter.findMany, {
-                  ...data,
                   model: data.model as TableNames,
                   where: parseWhere(w),
                   paginationOpts,
@@ -374,13 +369,12 @@ export const convexAdapter = <
 
           const result = await handlePagination(async ({ paginationOpts }) => {
             return await ctx.runQuery(api.adapter.findMany, {
-              ...data,
               model: data.model as TableNames,
               where: parseWhere(data.where),
               paginationOpts,
             });
           });
-          return result.docs.length;
+          return dedupeDocsById(result.docs).length;
         },
         update: async (data): Promise<any> => {
           if (!("runMutation" in ctx)) {
@@ -459,7 +453,6 @@ export const convexAdapter = <
           const result = await handlePagination(async ({ paginationOpts }) => {
             return await ctx.runMutation(api.adapter.deleteMany, {
               input: {
-                ...data,
                 model: data.model as TableNames,
                 where: parseWhere(data.where),
               },
@@ -507,15 +500,66 @@ export const convexAdapter = <
           const result = await handlePagination(async ({ paginationOpts }) => {
             return await ctx.runMutation(api.adapter.updateMany, {
               input: {
-                ...data,
                 model: data.model as TableNames,
                 where: parseWhere(data.where),
+                update: data.update,
               },
               paginationOpts,
               onUpdateHandle: onUpdateHandle,
             });
           });
           return result.count;
+        },
+        // Native atomic single-row consume. A Convex mutation is a
+        // transaction, so the read and delete below cannot interleave with
+        // another writer; this replaces Better Auth's snapshot-guard fallback,
+        // whose guard includes Convex system fields the component rejects.
+        consumeOne: async (data): Promise<any> => {
+          if (!("runMutation" in ctx)) {
+            throw new Error("ctx is not a mutation ctx");
+          }
+          if (data.where.some((w) => w.connector === "OR")) {
+            throw new Error("where clause not supported");
+          }
+          const onDeleteHandle =
+            config.authFunctions?.onDelete &&
+            config.triggers?.[data.model]?.onDelete
+              ? ((await createFunctionHandle(
+                  config.authFunctions.onDelete
+                )) as FunctionHandle<"mutation">)
+              : undefined;
+          return ctx.runMutation(api.adapter.consumeOne, {
+            input: {
+              model: data.model as TableNames,
+              where: parseWhere(data.where),
+            },
+            onDeleteHandle,
+          });
+        },
+        // Native atomic guarded counter mutation, see consumeOne.
+        incrementOne: async (data): Promise<any> => {
+          if (!("runMutation" in ctx)) {
+            throw new Error("ctx is not a mutation ctx");
+          }
+          if (data.where.some((w) => w.connector === "OR")) {
+            throw new Error("where clause not supported");
+          }
+          const onUpdateHandle =
+            config.authFunctions?.onUpdate &&
+            config.triggers?.[data.model]?.onUpdate
+              ? ((await createFunctionHandle(
+                  config.authFunctions.onUpdate
+                )) as FunctionHandle<"mutation">)
+              : undefined;
+          return ctx.runMutation(api.adapter.incrementOne, {
+            input: {
+              model: data.model as TableNames,
+              where: parseWhere(data.where),
+              increment: data.increment,
+              set: data.set as any,
+            },
+            onUpdateHandle,
+          });
         },
       };
     },
