@@ -17,8 +17,13 @@
 - feat: index `rateLimit.lastRequest` for expired row pruning
 - breaking: `findMany` sorted on a field no index covers fails with an error
   naming the index it needs, instead of returning rows in creation order
-- fix: the `host` header is set for exactly trusted original hosts so dynamic
-  `baseURL` configs resolve without `advanced.trustedProxyHeaders`
+- fix: registerRoutes sets the request origin itself. A forwarded scheme and
+  host must together form an exact trusted origin, and a client's own `host`
+  and `x-forwarded-*` headers are replaced, so neither can pick the origin
+  used for emailed links (follow-up to GHSA-pgx2-m66h-x29f). Dynamic `baseURL`
+  configs resolve without `advanced.trustedProxyHeaders`
+- fix: the Next.js and TanStack Start proxy handlers drop incoming
+  `x-forwarded-host` / `x-forwarded-proto`
 - fix: `AuthClient` type is structural so real auth clients are assignable again
 - breaking: the Convex plugin serves its OpenID discovery document directly and
   no longer advertises `/oauth2/*` endpoints that nothing served; the removed

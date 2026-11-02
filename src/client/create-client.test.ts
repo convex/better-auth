@@ -167,25 +167,40 @@ describe("createClient route registration", () => {
         forwardedHost: "app.example.com",
         forwardedProto: "https",
       });
+      expect(request.headers.get("x-better-auth-forwarded-host")).toBeNull();
+      expect(request.headers.get("x-better-auth-forwarded-proto")).toBeNull();
     });
 
-    it("requires the forwarded scheme to match the trusted origin", async () => {
+    it("rejects an http scheme for a host trusted only over https", async () => {
       vi.stubEnv("CONVEX_SITE_URL", SITE);
-      const httpsOnly = await callHandler(["https://app.example.com"], {
+      const request = await callHandler(["https://app.example.com"], {
+        "x-forwarded-host": "deployment.convex.site",
+        "x-forwarded-proto": "https",
         "x-better-auth-forwarded-host": "app.example.com",
         "x-better-auth-forwarded-proto": "http",
       });
-      expect(originOf(httpsOnly).url).toBe(`${SITE}/api/auth/test?x=1`);
-      const httpListed = await callHandler(
+      expect(originOf(request)).toEqual({
+        url: `${SITE}/api/auth/test?x=1`,
+        host: "deployment.convex.site",
+        forwardedHost: "deployment.convex.site",
+        forwardedProto: "https",
+      });
+    });
+
+    it("accepts an http scheme when that origin is trusted", async () => {
+      const request = await callHandler(
         ["https://app.example.com", "http://app.example.com"],
         {
           "x-better-auth-forwarded-host": "app.example.com",
           "x-better-auth-forwarded-proto": "http",
         }
       );
-      expect(originOf(httpListed).url).toBe(
-        "http://app.example.com/api/auth/test?x=1"
-      );
+      expect(originOf(request)).toEqual({
+        url: "http://app.example.com/api/auth/test?x=1",
+        host: "app.example.com",
+        forwardedHost: "app.example.com",
+        forwardedProto: "http",
+      });
     });
 
     it("ignores an original host that only matches a wildcard", async () => {
@@ -206,6 +221,22 @@ describe("createClient route registration", () => {
         "x-better-auth-forwarded-host": "app.example.com",
       });
       expect(originOf(request).host).toBe("deployment.convex.site");
+    });
+
+    it("ignores an original host that smuggles a path or userinfo", async () => {
+      vi.stubEnv("CONVEX_SITE_URL", SITE);
+      for (const host of [
+        "app.example.com/evil",
+        "app.example.com?x",
+        "user@app.example.com",
+        "app.example.com#f",
+      ]) {
+        const request = await callHandler(["https://app.example.com"], {
+          "x-better-auth-forwarded-host": host,
+          "x-better-auth-forwarded-proto": "https",
+        });
+        expect(originOf(request).host, host).toBe("deployment.convex.site");
+      }
     });
 
     it("replaces client-sent host and x-forwarded-* with the site URL", async () => {
@@ -240,6 +271,20 @@ describe("createClient route registration", () => {
         url: "https://auth.example.com/api/auth/test?x=1",
         host: "auth.example.com",
         forwardedHost: "auth.example.com",
+        forwardedProto: "https",
+      });
+    });
+
+    it("keeps the request's own origin without a site URL", async () => {
+      vi.stubEnv("CONVEX_SITE_URL", "");
+      const request = await callHandler([], {
+        "x-forwarded-host": "other.example",
+        "x-forwarded-proto": "http",
+      });
+      expect(originOf(request)).toEqual({
+        url: `${SITE}/api/auth/test?x=1`,
+        host: "deployment.convex.site",
+        forwardedHost: "deployment.convex.site",
         forwardedProto: "https",
       });
     });
