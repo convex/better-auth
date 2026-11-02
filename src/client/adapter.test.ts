@@ -44,6 +44,9 @@ const NORMAL_DISABLED_TESTS = [
   // convex-id-generation:
   // Convex controls generated IDs at write time.
   "create - should use generateId if provided",
+  // unindexed-sort:
+  // Convex adapter refuses sorts no index serves, and no index orders by id.
+  "findMany - should find many models with sortBy id",
   // offset-unsupported:
   // Convex adapter rejects offset pagination.
   "findMany - should be able to perform a complex limited join",

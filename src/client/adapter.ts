@@ -16,6 +16,7 @@ import type { Where } from "better-auth/types";
 import { asyncMap } from "convex-helpers";
 import { isRunMutationCtx } from "../utils/index.js";
 import { compareSortValues } from "./adapter-utils.js";
+import type { UnservedSort } from "./adapter-utils.js";
 import type { Doc, TableNames } from "../component/_generated/dataModel.js";
 import type { ComponentApi } from "../component/_generated/component.js";
 import type { AuthFunctions, GenericCtx, Triggers } from "./index.js";
@@ -125,6 +126,33 @@ const parseWhere = (
     }
     return w;
   }) as ConvexCleanedWhere[];
+};
+
+// The component sets `unservedSort` on a page when no index returned the rows
+// in sortBy order (see unservedSort in adapter-utils). Better Auth always
+// passes findMany a limit (100 by default), and the first rows read are then
+// not the first rows in sort order; finding those would mean reading every
+// matching row, so refuse rather than return the wrong rows.
+const assertSortServed = (
+  page: { unservedSort?: UnservedSort },
+  data: { model: string; sortBy?: { field: string } }
+) => {
+  if (!page.unservedSort || !data.sortBy) {
+    return;
+  }
+  const { indexFields, rangeField } = page.unservedSort;
+  const { field } = data.sortBy;
+  const fix =
+    field === "id" || field === "_id"
+      ? `Sorting by id isn't supported.`
+      : indexFields
+        ? `Add an index on [${indexFields.join(", ")}] (Local Install only, see https://labs.convex.dev/better-auth/features/local-install#adding-custom-indexes), or sort by an indexed field.`
+        : rangeField
+          ? `The query's range on "${rangeField}" orders the rows by that field first, so no index can.`
+          : `No index can serve a sort on the field an "in" matches.`;
+  throw new Error(
+    `Cannot sort "${data.model}" by "${field}", because no index returns its rows in that order. ${fix}`
+  );
 };
 
 type DocWithFlexibleId = {
@@ -352,7 +380,7 @@ export const convexAdapter = <
             const results = await asyncMap(data.where, async (w) =>
               handlePagination(
                 async ({ paginationOpts }) => {
-                  return await ctx.runQuery(api.adapter.findMany, {
+                  const page = await ctx.runQuery(api.adapter.findMany, {
                     model: data.model as TableNames,
                     where: parseWhere(w),
                     limit: data.limit,
@@ -360,6 +388,8 @@ export const convexAdapter = <
                     join: data.join,
                     paginationOpts,
                   });
+                  assertSortServed(page, data);
+                  return page;
                 },
                 { limit: data.limit }
               )
@@ -379,7 +409,7 @@ export const convexAdapter = <
 
           const result = await handlePagination(
             async ({ paginationOpts }) => {
-              return await ctx.runQuery(api.adapter.findMany, {
+              const page = await ctx.runQuery(api.adapter.findMany, {
                 model: data.model as TableNames,
                 where: parseWhere(data.where),
                 select: data.select,
@@ -388,6 +418,8 @@ export const convexAdapter = <
                 join: data.join,
                 paginationOpts,
               });
+              assertSortServed(page, data);
+              return page;
             },
             { limit: data.limit }
           );

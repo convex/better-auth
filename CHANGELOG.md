@@ -15,6 +15,8 @@
 - fix: atomic writes aren't faked as misses in query contexts, which could make
   callers retry forever
 - feat: index `rateLimit.lastRequest` for expired row pruning
+- breaking: `findMany` sorted on a field no index covers fails with an error
+  naming the index it needs, instead of returning rows in creation order
 - fix: the `host` header is set for exactly trusted original hosts so dynamic
   `baseURL` configs resolve without `advanced.trustedProxyHeaders`
 - fix: `AuthClient` type is structural so real auth clients are assignable again

@@ -17,9 +17,10 @@
  * - Filtered scans that cross the 200-row page must visit every matching row
  *   exactly once, including when the page is split because rejected rows
  *   pushed the row budget past the page size.
- * - `sortBy` orders by the requested field whether or not it is indexed and
- *   whether or not every row has a value (nulls first ascending, last
- *   descending, as in the memory adapter).
+ * - `sortBy` orders by the requested field whether or not every row has a
+ *   value (nulls first ascending, last descending, as in the memory adapter)
+ *   whenever an index serves the sort. When none does, the adapter refuses
+ *   the query rather than return rows in another order.
  * - Uniqueness declared through table-level `indexes: [{ fields, unique }]`
  *   (Better Auth 1.7 plugins) is enforced and emitted by the schema generator,
  *   and null values never collide.
@@ -660,23 +661,28 @@ describe("sortBy on a field some rows lack", () => {
   describe.each([
     { field: "indexed", kind: "indexed" },
     { field: "plain", kind: "unindexed" },
-  ])("$kind field `$field`", ({ field }) => {
-    it("sorts ascending with nulls first and descending with nulls last", async () => {
-      const h = await setup();
-      await seedSortRows(h);
-      const asc = await h.adapter.findMany<Row>({
-        model: "nullable",
-        sortBy: { field, direction: "asc" },
-      });
-      expect(values(asc, field)).toEqual(ASC);
-      const desc = await h.adapter.findMany<Row>({
-        model: "nullable",
-        sortBy: { field, direction: "desc" },
-      });
-      expect(values(desc, field)).toEqual(DESC);
-    });
+  ])("$kind field `$field`", ({ field, kind }) => {
+    const indexedOnly = it.runIf(kind === "indexed");
 
-    it("applies the limit after sorting", async () => {
+    indexedOnly(
+      "sorts ascending with nulls first and descending with nulls last",
+      async () => {
+        const h = await setup();
+        await seedSortRows(h);
+        const asc = await h.adapter.findMany<Row>({
+          model: "nullable",
+          sortBy: { field, direction: "asc" },
+        });
+        expect(values(asc, field)).toEqual(ASC);
+        const desc = await h.adapter.findMany<Row>({
+          model: "nullable",
+          sortBy: { field, direction: "desc" },
+        });
+        expect(values(desc, field)).toEqual(DESC);
+      }
+    );
+
+    indexedOnly("applies the limit after sorting", async () => {
       const h = await setup();
       await seedSortRows(h);
       const asc = await h.adapter.findMany<Row>({
@@ -711,7 +717,7 @@ describe("sortBy on a field some rows lack", () => {
       expect(values(desc, field)).toEqual(DESC);
     });
 
-    it("sorts an OR union", async () => {
+    indexedOnly("sorts an OR union", async () => {
       const h = await setup();
       await seedSortRows(h);
       // Both branches together cover every row; the union must still sort.
@@ -732,6 +738,156 @@ describe("sortBy on a field some rows lack", () => {
       });
       expect(values(desc, field)).toEqual(DESC);
     });
+
+    // Better Auth always passes findMany a limit (100 by default), and the
+    // first rows a scan reads are not the first rows in sort order.
+    it.runIf(kind === "unindexed")(
+      "refuses the sort rather than return rows in another order",
+      async () => {
+        const h = await setup();
+        await seedSortRows(h);
+        await expect(
+          h.adapter.findMany({
+            model: "nullable",
+            sortBy: { field, direction: "asc" },
+          })
+        ).rejects.toThrow(/no index returns its rows in that order.*\[plain\]/);
+        await expect(
+          h.adapter.findMany({
+            model: "nullable",
+            sortBy: { field, direction: "desc" },
+            limit: 2,
+          })
+        ).rejects.toThrow(/Cannot sort "nullable" by "plain"/);
+        await expect(
+          h.adapter.findMany({
+            model: "nullable",
+            where: [
+              { field: "indexed", operator: "eq", value: "a", connector: "OR" },
+              { field: "plain", operator: "ne", value: "a", connector: "OR" },
+            ],
+            sortBy: { field, direction: "asc" },
+          })
+        ).rejects.toThrow(/Cannot sort "nullable" by "plain"/);
+      }
+    );
+  });
+});
+
+describe("sorts served or refused by the index the query uses", () => {
+  it("refuses an equality plus a sort with no index on both", async () => {
+    const h = await setup();
+    await expect(
+      h.adapter.findMany({
+        model: "nullable",
+        where: [{ field: "indexed", operator: "eq", value: "a" }],
+        sortBy: { field: "plain", direction: "asc" },
+      })
+    ).rejects.toThrow(/Add an index on \[indexed, plain\]/);
+  });
+
+  it("serves a sort on a field an equality pins to one value", async () => {
+    const h = await setup();
+    await h.insertMany("nullable", [{ plain: "a" }, { plain: "b" }]);
+    const rows = await h.adapter.findMany<Row>({
+      model: "nullable",
+      where: [{ field: "plain", operator: "eq", value: "a" }],
+      sortBy: { field: "plain", direction: "asc" },
+    });
+    expect(rows.map((row) => row.plain)).toEqual(["a"]);
+  });
+
+  it("serves createdAt from creation order when no index matches the equality", async () => {
+    const h = await setup();
+    const ids = await h.insertMany("nullable", [
+      { plain: "a" },
+      { plain: "b" },
+      { plain: "a" },
+    ]);
+    const rows = await h.adapter.findMany<Row>({
+      model: "nullable",
+      where: [{ field: "plain", operator: "eq", value: "a" }],
+      sortBy: { field: "createdAt", direction: "desc" },
+      limit: 1,
+    });
+    expect(rows.map((row) => row.id)).toEqual([ids[2]]);
+  });
+
+  // `session` has an index on [expiresAt, userId], so the query uses it, but
+  // rows come back ordered by expiresAt, not userId.
+  it("refuses a sort on one field with a range on another, even when an index covers both", async () => {
+    const h = await setup();
+    const now = Date.now();
+    await h.insertMany(
+      "session",
+      ["b", "a"].map((userId, i) => ({
+        token: `token-${i}`,
+        userId,
+        expiresAt: now + i,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    );
+    await expect(
+      h.adapter.findMany({
+        model: "session",
+        where: [{ field: "expiresAt", operator: "gt", value: now - 1 }],
+        sortBy: { field: "userId", direction: "asc" },
+      })
+    ).rejects.toThrow(/range on "expiresAt"/);
+  });
+
+  it("serves a sort on the field a range bounds", async () => {
+    const h = await setup();
+    const now = Date.now();
+    await h.insertMany(
+      "session",
+      [2, 0, 1].map((offset, i) => ({
+        token: `token-${i}`,
+        userId: "user",
+        expiresAt: now + offset,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    );
+    const rows = await h.adapter.findMany<Row>({
+      model: "session",
+      where: [{ field: "expiresAt", operator: "gte", value: now }],
+      sortBy: { field: "expiresAt", direction: "desc" },
+    });
+    expect(rows.map((row) => row.expiresAt - now)).toEqual([2, 1, 0]);
+  });
+
+  it("refuses a sort by id, which no index orders", async () => {
+    const h = await setup();
+    await expect(
+      h.adapter.findMany({
+        model: "nullable",
+        sortBy: { field: "id", direction: "asc" },
+      })
+    ).rejects.toThrow(/Sorting by id isn't supported/);
+  });
+
+  it("refuses a sort on the field an `in` matches", async () => {
+    const h = await setup();
+    await expect(
+      h.adapter.findMany({
+        model: "clientResource",
+        where: [{ field: "clientId", operator: "in", value: ["a", "b"] }],
+        sortBy: { field: "clientId", direction: "asc" },
+      })
+    ).rejects.toThrow(/the field an "in" matches/);
+  });
+
+  it("refuses a sort after an `in` with no index on both", async () => {
+    const h = await setup();
+    await expect(
+      h.adapter.findMany({
+        model: "clientResource",
+        where: [{ field: "clientId", operator: "in", value: ["a", "b"] }],
+        sortBy: { field: "label", direction: "asc" },
+      })
+    ).rejects.toThrow(/Add an index on \[clientId, label\]/);
   });
 });
 

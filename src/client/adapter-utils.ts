@@ -561,6 +561,64 @@ const generateQuery = (
   return filteredQuery;
 };
 
+// The fields a query returns rows ordered by: the fields of its index after
+// the equality prefix, ending in _creationTime, or creation order when it
+// uses no index.
+const queryOrder = (found: ReturnType<typeof findIndex>) =>
+  found?.index && found.index.indexDescriptor !== "by_creation_time"
+    ? found.index.fields.slice(found.values.eq.length)
+    : ["_creationTime"];
+
+// Set on a page when the query's order doesn't follow sortBy, which happens
+// when no index serves the sort. The client refuses the query then (see
+// assertSortServed in the client).
+// `indexFields` is the index that would serve the sort. When none can, it is
+// left out, and `rangeField` names the range on another field that orders
+// the rows first, if that is why.
+export type UnservedSort = { indexFields?: string[]; rangeField?: string };
+
+const unservedSort = (
+  args: Infer<typeof adapterArgsValidator>,
+  found: ReturnType<typeof findIndex>
+): { unservedSort?: UnservedSort } => {
+  if (!args.sortBy) {
+    return {};
+  }
+  const { field } = args.sortBy;
+  // An equality on the sort field leaves every matching row with one value.
+  if (
+    args.where?.some(
+      (w) => (!w.operator || w.operator === "eq") && w.field === field
+    )
+  ) {
+    return {};
+  }
+  // createdAt is served by _creationTime, as in findIndex.
+  const sortKey = field === "createdAt" ? "_creationTime" : field;
+  if (queryOrder(found)[0] === sortKey) {
+    return {};
+  }
+  const range = args.where?.find(
+    (w) => w.operator && ["lt", "lte", "gt", "gte"].includes(w.operator)
+  );
+  if (range && range.field !== field) {
+    return { unservedSort: { rangeField: range.field } };
+  }
+  // `in` branches merge on the index fields after the equality prefix, which
+  // never include the `in` field itself, so no index serves this sort.
+  if (args.where?.some((w) => w.operator === "in" && w.field === field)) {
+    return { unservedSort: {} };
+  }
+  return {
+    unservedSort: {
+      indexFields:
+        found && "indexFields" in found && found.indexFields
+          ? found.indexFields.map(String)
+          : [field],
+    },
+  };
+};
+
 // This is the core function for reading from the database, it parses and
 // validates where conditions, selects indexes, and allows the caller to
 // optionally paginate as needed. Every response is a pagination result.
@@ -717,17 +775,16 @@ export const paginate = async <
     // the equality prefix, so order the merge by exactly those fields (ending
     // in _creationTime). `_creationTime` alone is only right when the `in`
     // field is the last field of its index.
-    const { index, values } = findIndex(schema, branchArgs(inValues[0]!)) ?? {};
-    const mergeFields =
-      index && index.indexDescriptor !== "by_creation_time"
-        ? index.fields.slice(values?.eq.length ?? 0)
-        : ["_creationTime"];
-    const result = await mergedStream(streams, mergeFields).paginate(
+    const found = findIndex(schema, branchArgs(inValues[0]!));
+    const result = await mergedStream(streams, queryOrder(found)).paginate(
       paginationOpts
     );
     return {
       ...result,
       page: result.page.map((doc) => selectFields(doc, args.select)),
+      // Judged on args, not the branch: an `in` on the sort field is not an
+      // equality, so the merged rows are not sorted by it.
+      ...unservedSort(args, found),
     };
   }
 
@@ -736,6 +793,7 @@ export const paginate = async <
   return {
     ...result,
     page: result.page.map((doc) => selectFields(doc, args.select)),
+    ...unservedSort(args, findIndex(schema, args)),
   };
 };
 
