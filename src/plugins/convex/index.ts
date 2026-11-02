@@ -295,22 +295,26 @@ export const convex = (opts: {
       ],
       after: [
         {
-          // Only refresh the Convex JWT cookie for an established session.
-          // Never sign one for a new session: a later plugin's after hook can
-          // still cancel the sign-in and delete it (twoFactor does, while the
-          // second factor is pending). Sign-in paths clear the cookie below
-          // instead; /convex/token and the next /get-session set it again.
+          // Refresh the Convex JWT cookie only on requests made with an
+          // established session (/get-session, /update-session). The
+          // /convex/token endpoint below does the same behind
+          // sessionMiddleware. The JWT is never signed for
+          // ctx.context.newSession: after hooks run in plugin order, and a
+          // later plugin's hook can still cancel the sign-in and delete
+          // that session (twoFactor does this while the second factor is
+          // pending), which would leave a valid JWT for a session that no
+          // longer exists.
           matcher: (ctx) => {
             return Boolean(
               ctx.path?.startsWith("/update-session") ||
-              (ctx.path?.startsWith("/get-session") && ctx.context.session)
+                (ctx.path?.startsWith("/get-session") && ctx.context.session)
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
-            const originalSession = ctx.context.session;
+            if (!ctx.context.session) {
+              return;
+            }
             try {
-              ctx.context.session =
-                ctx.context.session ?? ctx.context.newSession;
               const { token } = await jwt.endpoints.getToken({
                 ...ctx,
                 headers: {},
@@ -327,23 +331,25 @@ export const convex = (opts: {
             } catch (_err) {
               // no-op
             }
-            ctx.context.session = originalSession;
           }),
         },
         {
+          // Expire the Convex JWT cookie on requests that start a new
+          // session (so a cached JWT for the previous session is never
+          // served) or end one. The cookie is set again by /convex/token
+          // or the next /get-session with a valid session.
           matcher: (ctx) => {
             return Boolean(
               ctx.path?.startsWith("/sign-in") ||
-              ctx.path?.startsWith("/sign-up") ||
-              ctx.path?.startsWith("/callback") ||
-              ctx.path?.startsWith("/oauth2/callback") ||
-              ctx.path?.startsWith("/magic-link/verify") ||
-              ctx.path?.startsWith("/email-otp/verify-email") ||
-              ctx.path?.startsWith("/phone-number/verify") ||
-              ctx.path?.startsWith("/siwe/verify") ||
-              ctx.path?.startsWith("/sign-out") ||
-              ctx.path?.startsWith("/delete-user") ||
-              (ctx.path?.startsWith("/get-session") && !ctx.context.session)
+                ctx.path?.startsWith("/sign-up") ||
+                ctx.path?.startsWith("/callback") ||
+                ctx.path?.startsWith("/magic-link/verify") ||
+                ctx.path?.startsWith("/email-otp/verify-email") ||
+                ctx.path?.startsWith("/phone-number/verify") ||
+                ctx.path?.startsWith("/siwe/verify") ||
+                ctx.path?.startsWith("/sign-out") ||
+                ctx.path?.startsWith("/delete-user") ||
+                (ctx.path?.startsWith("/get-session") && !ctx.context.session)
             );
           },
           handler: createAuthMiddleware(async (ctx) => {

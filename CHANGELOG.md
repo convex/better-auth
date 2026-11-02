@@ -33,6 +33,11 @@
 - breaking: Convex plugin endpoint keys renamed to `getConvexToken`,
   `getConvexJwks` and `getConvexOpenIdConfig` to avoid being shadowed by the
   `jwt` and `oauth-provider` plugins (#395); HTTP paths are unchanged
+- fix: the Convex JWT cookie is no longer issued on sign-in. It is only set by
+  `/convex/token` and by `/get-session` and `/update-session` with a valid
+  session, and is cleared on requests that start or end a session. A sign-in
+  that a later plugin cancels (two-factor authentication pending) no longer
+  yields a Convex JWT for the deleted session.
 
 ## 0.12.7
 
