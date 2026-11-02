@@ -77,6 +77,89 @@ describe("convex plugin JWT cookie refresh matcher", () => {
   });
 });
 
+const getJwtExpireCookieMatcher = () => {
+  const plugin = convex({ authConfig });
+  const afterHooks = plugin.hooks?.after ?? [];
+  const matcher = afterHooks.find((hook) => {
+    return hook.matcher({
+      path: "/sign-out",
+      context: { session: null },
+    } as unknown as Parameters<typeof hook.matcher>[0]);
+  })?.matcher;
+  if (!matcher) {
+    throw new Error(
+      "Failed to find Convex JWT expire-cookie after hook matcher"
+    );
+  }
+  return matcher;
+};
+
+describe("convex plugin JWT cookie expire matcher", () => {
+  it("matches a request that switches to a different session", () => {
+    const matcher = getJwtExpireCookieMatcher();
+    type MatcherContext = Parameters<typeof matcher>[0];
+    for (const path of [
+      "/multi-session/set-active",
+      "/admin/impersonate-user",
+      "/admin/stop-impersonating",
+      "/verify-email",
+      "/one-time-token/verify",
+    ]) {
+      const switched = {
+        path,
+        context: {
+          session: { session: { id: "s1" } },
+          newSession: { session: { id: "s2" } },
+        },
+      };
+      const fresh = {
+        path,
+        context: { session: null, newSession: { session: { id: "s2" } } },
+      };
+      expect(matcher(switched as unknown as MatcherContext), path).toBe(true);
+      expect(matcher(fresh as unknown as MatcherContext), path).toBe(true);
+    }
+  });
+
+  it("doesn't match a refresh of the same session", () => {
+    const matcher = getJwtExpireCookieMatcher();
+    const setMatcher = getJwtSetCookieMatcher();
+    type MatcherContext = Parameters<typeof matcher>[0];
+    for (const path of ["/get-session", "/update-session", "/update-user"]) {
+      const ctx = {
+        path,
+        context: {
+          session: { session: { id: "s1" } },
+          newSession: { session: { id: "s1" } },
+        },
+      };
+      expect(matcher(ctx as unknown as MatcherContext), path).toBe(false);
+    }
+    // The set and expire hooks never both match the same request.
+    for (const path of ["/get-session", "/update-session"]) {
+      const ctx = {
+        path,
+        context: {
+          session: { session: { id: "s1" } },
+          newSession: { session: { id: "s1" } },
+        },
+      };
+      expect(setMatcher(ctx as unknown as MatcherContext), path).toBe(true);
+      expect(matcher(ctx as unknown as MatcherContext), path).toBe(false);
+    }
+  });
+
+  it("doesn't match a request without a new session", () => {
+    const matcher = getJwtExpireCookieMatcher();
+    type MatcherContext = Parameters<typeof matcher>[0];
+    const ctx = {
+      path: "/multi-session/list-device-sessions",
+      context: { session: { session: { id: "s1" } }, newSession: null },
+    };
+    expect(matcher(ctx as unknown as MatcherContext)).toBe(false);
+  });
+});
+
 describe("convex plugin OpenID discovery document", () => {
   afterEach(() => {
     vi.unstubAllEnvs();

@@ -338,9 +338,24 @@ export const convex = (opts: {
           // session (so a cached JWT for the previous session is never
           // served) or end one. The cookie is set again by /convex/token
           // or the next /get-session with a valid session.
+          //
+          // Besides the paths below, this matches any request that ends
+          // with a different session than it started with: Better Auth
+          // records every session cookie it sets as ctx.context.newSession,
+          // so this also covers endpoints that switch accounts without a
+          // sign-in path (multi-session set-active, impersonation, email
+          // verification's auto sign-in, plugin callbacks). A refresh of
+          // the same session (/get-session, /update-session, /update-user)
+          // keeps its id and doesn't match, so the cookie the hook above
+          // just set is kept. The paths stay listed because twoFactor
+          // clears newSession when it holds a sign-in for the second
+          // factor.
           matcher: (ctx) => {
+            const newSessionId = ctx.context.newSession?.session.id;
             return Boolean(
-              ctx.path?.startsWith("/sign-in") ||
+              (newSessionId &&
+                newSessionId !== ctx.context.session?.session.id) ||
+                ctx.path?.startsWith("/sign-in") ||
                 ctx.path?.startsWith("/sign-up") ||
                 ctx.path?.startsWith("/callback") ||
                 ctx.path?.startsWith("/magic-link/verify") ||

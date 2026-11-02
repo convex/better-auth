@@ -38,6 +38,10 @@
   session, and is cleared on requests that start or end a session. A sign-in
   that a later plugin cancels (two-factor authentication pending) no longer
   yields a Convex JWT for the deleted session.
+- fix: the Convex JWT cookie is also cleared when a request switches to a
+  different session without a sign-in path (multi-session `setActive`, admin
+  impersonation, email verification auto sign-in), so a cached JWT for the
+  previous account isn't served with `jwtCache`
 
 ## 0.12.7
 
