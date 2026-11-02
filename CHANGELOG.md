@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.13.0
+## Unreleased
 
 - feat: support Better Auth 1.7 (minimum 1.7.14)
 - feat: native `consumeOne` and `incrementOne` adapter methods for Better Auth
