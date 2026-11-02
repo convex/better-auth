@@ -9,6 +9,7 @@
     "integrations",
     "experimental",
     "api",
-    "upgrading"
+    "upgrading",
+    "security"
   ]
 }

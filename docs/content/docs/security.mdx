@@ -1,0 +1,50 @@
+---
+title: Security
+description: Supported versions, known issues in older versions, and advisories
+---
+
+## Supported versions
+
+Only the latest version of `@convex-dev/better-auth` is supported, matching
+Better Auth's own
+[security policy](https://github.com/better-auth/better-auth/blob/main/SECURITY.md).
+Fixes, including security fixes, ship in the latest version. See
+[Upgrading](/upgrading) for how to update from your current version to latest.
+
+## Known issues and workarounds for older versions
+
+### 0.10 through 0.12: Magic Link with social or Generic OAuth sign-in
+
+Versions 0.10 through 0.12 use Better Auth versions affected by
+[GHSA-965c-763c-88jm](https://github.com/advisories/GHSA-965c-763c-88jm), a
+critical issue for apps that use Magic Link together with social or Generic
+OAuth sign-in. It's fixed in Better Auth 1.7.7, which the latest version
+requires.
+
+Workaround: set `storeToken: "hashed"` on the Magic Link plugin and leave the
+global `verification.storeIdentifier` unset or set to `"plain"`, or turn off
+Magic Link or social and Generic OAuth sign-in.
+
+### 0.9: Two Factor with the session cookie cache
+
+Version 0.9 uses Better Auth 1.3, which is affected by
+[GHSA-xg6x-h9c9-2m83](https://github.com/advisories/GHSA-xg6x-h9c9-2m83): with
+the Two Factor plugin and `session.cookieCache` enabled, a session can be cached
+as valid before the second factor is verified.
+
+Workaround: turn off `session.cookieCache`.
+
+## Advisories
+
+Advisories for `@convex-dev/better-auth` itself are published on
+[GitHub](https://github.com/convex/better-auth/security/advisories):
+
+| Advisory                                                                                                                                                                                       | Severity | Fixed in |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
+| [GHSA-j8qq-g9pm-v3c2](https://github.com/convex/better-auth/security/advisories/GHSA-j8qq-g9pm-v3c2): cross-domain plugin can deliver a session token to a trusted origin an attacker controls | High     | 0.12.6   |
+| [GHSA-pgx2-m66h-x29f](https://github.com/convex/better-auth/security/advisories/GHSA-pgx2-m66h-x29f): emailed links can point at an attacker's host with a dynamic `baseURL`                   | Medium   | 0.12.6   |
+
+## Reporting a vulnerability
+
+Email [security@convex.dev](mailto:security@convex.dev). Please don't open a
+public issue or pull request for a vulnerability.
