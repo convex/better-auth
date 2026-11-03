@@ -234,7 +234,20 @@ export const convex = (opts: {
   return {
     id: "convex",
     init: (ctx) => {
-      const { options, logger: _logger } = ctx;
+      const { options, logger } = ctx;
+      // Better Auth's session cookie cache isn't supported with Convex: the
+      // adapter returns dates as numbers, and since Better Auth 1.7 the cache
+      // payload is only accepted with Date objects, so a cached session never
+      // validates and every /get-session falls back to the database and sets
+      // the cookie again. Turn it off here. Options returned from init are
+      // merged under the app's options and would lose, so change the app's
+      // options in place; the request-time checks read this same object.
+      if (options.session?.cookieCache?.enabled) {
+        logger.warn(
+          "[convex-better-auth] session.cookieCache isn't supported with Convex and has been turned off. Remove it from your Better Auth options."
+        );
+        options.session.cookieCache.enabled = false;
+      }
       if (options.basePath !== "/api/auth" && !opts.options?.basePath) {
         // eslint-disable-next-line no-console
         console.warn(

@@ -31,6 +31,12 @@ in Convex.
   Auth component (preconfigured with the
   [supported plugins](/supported-plugins)) is used, and cannot be altered.
 
+- #### Session cookie cache
+
+  Better Auth's `session.cookieCache` isn't supported with Convex. Sessions are
+  always read from the database. If it's enabled in your Better Auth options,
+  the Convex plugin turns it off and logs a warning.
+
 ## Using server methods with `auth.api`
 
 Better Auth's server side `auth.api` methods can be used with your `createAuth`

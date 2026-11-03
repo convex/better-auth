@@ -42,6 +42,10 @@
   impersonation, email verification auto sign-in), so a cached JWT for the
   previous account isn't served with `jwtCache`
 - chore: drop the unused `remeda` dependency
+- fix: the Convex plugin turns `session.cookieCache` off and logs a warning when
+  it's enabled. The cookie cache isn't supported with Convex (#18, #73, #434),
+  and on Better Auth 1.7 an enabled cache made every `getSession` fall back to
+  the database and set the cookie again
 
 ## 0.12.7
 
