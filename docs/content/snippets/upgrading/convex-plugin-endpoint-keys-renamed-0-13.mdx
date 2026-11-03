@@ -1,6 +1,6 @@
 <div className="fd-step">
 
-### Convex plugin endpoint keys renamed
+### Plugin endpoint keys renamed
 
 The Convex plugin's `getToken`, `getJwks` and `getOpenIdConfig` endpoints are
 renamed to `getConvexToken`, `getConvexJwks` and `getConvexOpenIdConfig`. Better
@@ -11,5 +11,10 @@ names, such as `jwt`, could replace them. The HTTP paths (`/convex/token`,
 `auth.api.getToken()`, `auth.api.getJwks()` or `auth.api.getOpenIdConfig()`
 expecting the Convex plugin's endpoints, switch to `auth.api.getConvexToken()`,
 `auth.api.getConvexJwks()` or `auth.api.getConvexOpenIdConfig()`.
+
+The cross-domain plugin's `verifyOneTimeToken` endpoint is renamed
+`verifyCrossDomainOneTimeToken` for the same reason;
+`/cross-domain/one-time-token/verify` and
+`authClient.crossDomain.oneTimeToken.verify()` are unchanged.
 
 </div>

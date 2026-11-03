@@ -4,6 +4,7 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 import type { MemoryDB } from "better-auth/adapters/memory";
 import { genericOAuth } from "better-auth/plugins";
 import { magicLink } from "better-auth/plugins/magic-link";
+import { oneTimeToken } from "better-auth/plugins/one-time-token";
 import { crossDomain } from "./index.js";
 
 const SITE_URL = "https://myapp.example.com";
@@ -98,7 +99,7 @@ const createTestAuth = (siteUrl: string) => {
 
   const oneTimeTokenCount = () =>
     db.verification.filter((entry) =>
-      entry.identifier.startsWith("one-time-token:")
+      entry.identifier.startsWith("cross-domain-ott:")
     ).length;
 
   // Request a magic link, then follow it the way the user's browser would:
@@ -317,7 +318,7 @@ describe("crossDomain plugin", async () => {
       expect(oneTimeTokenCount()).toBe(before + 1);
       expect(
         db.verification.find(
-          (entry) => entry.identifier === `one-time-token:${ott}`
+          (entry) => entry.identifier === `cross-domain-ott:${ott}`
         )
       ).toBeDefined();
     });
@@ -377,7 +378,7 @@ describe("crossDomain plugin", async () => {
       const ott = expectOtt(response, SITE_URL);
       expect(oneTimeTokenCount()).toBe(before + 1);
       const sessionToken = db.verification.find(
-        (entry) => entry.identifier === `one-time-token:${ott}`
+        (entry) => entry.identifier === `cross-domain-ott:${ott}`
       )?.value;
       expect(sessionToken).toBeTruthy();
       // The token redeems for the session created by the callback.
@@ -405,6 +406,30 @@ describe("crossDomain plugin", async () => {
       const response = await completeOAuth(`${WILDCARD_ORIGIN}/callback`);
       expectNoOtt(response, WILDCARD_ORIGIN);
       expect(oneTimeTokenCount()).toBe(before);
+    });
+  });
+
+  describe("alongside Better Auth's oneTimeToken plugin", () => {
+    // Better Auth merges plugin endpoints by key, so both plugins must keep
+    // their own keys whichever order they are listed in.
+    it.each([
+      [
+        "cross-domain first",
+        [crossDomain({ siteUrl: SITE_URL }), oneTimeToken()],
+      ],
+      [
+        "oneTimeToken first",
+        [oneTimeToken(), crossDomain({ siteUrl: SITE_URL })],
+      ],
+    ])("serves both verify endpoints, %s", (_name, plugins) => {
+      const both = betterAuth({
+        baseURL: AUTH_BASE_URL,
+        secret: "test-secret-at-least-thirty-two-characters-long",
+        database: memoryAdapter({}),
+        plugins,
+      });
+      expect(typeof both.api.verifyOneTimeToken).toBe("function");
+      expect(typeof both.api.verifyCrossDomainOneTimeToken).toBe("function");
     });
   });
 
