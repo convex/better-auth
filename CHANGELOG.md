@@ -2,83 +2,31 @@
 
 ## Unreleased
 
-- feat: support Better Auth 1.7 (minimum 1.7.14)
-- feat: native `consumeOne` and `incrementOne` adapter methods for Better Auth
-  1.7's atomic verification consume and counter updates
-- fix: adapter no longer forwards Better Auth 1.7's `modelKey` to Convex
-  functions
-- fix: `updateOne` returns null instead of throwing when nothing matches
-- fix: Better Auth 1.7's verification reservations work on Convex, so magic link
-  and email OTP sign-in for an existing unverified user no longer fail
-- fix: `incrementOne` range guards never match unset fields, and
-  `consumeOne`/`incrementOne` return null for an empty where
-- fix: atomic writes aren't faked as misses in query contexts, which could make
-  callers retry forever
-- feat: index `rateLimit.lastRequest` for expired row pruning
-- breaking: `findMany` sorted on a field no index covers fails with an error
-  naming the index it needs, instead of returning rows in creation order
-- fix: the origin `registerRoutes` sets (0.12.7) also rejects a forwarded host
-  that carries a path, query or userinfo, and the Next.js and TanStack Start
-  proxy handlers drop incoming `x-forwarded-host` / `x-forwarded-proto`. Dynamic
-  `baseURL` configs resolve on Better Auth 1.7 without
-  `advanced.trustedProxyHeaders`
-- fix: `AuthClient` type is structural so real auth clients are assignable again
+- feat: support Better Auth 1.7 (minimum 1.7.14); 1.6 is no longer supported
+  (#433). Breaking changes and upgrade steps are in the
+  [upgrade guide](https://labs.convex.dev/better-auth/upgrading)
 - breaking: acting as an OpenID provider (`oidcProvider`) is no longer
-  supported: Better Auth 1.7 removed the plugin, and providing OpenID on 1.7
-  requires compound unique indexes, which the Convex adapter doesn't support
-  (schema generation and the adapter throw on them). The removed plugin's
-  `oauthApplication`, `oauthAccessToken` and `oauthConsent` tables are no longer
-  in the component schema (data is kept, see the Upgrading guide). The Convex
-  plugin serves its OpenID discovery document directly and no longer advertises
-  `/oauth2/*` endpoints that nothing served
-- breaking: Convex plugin endpoint keys renamed to `getConvexToken`,
-  `getConvexJwks` and `getConvexOpenIdConfig` to avoid being shadowed by the
-  `jwt` plugin and other plugins' endpoints (#395); HTTP paths are unchanged
-- fix: unique checks skip null and unset values, so rows with a cleared unique
-  field (e.g. username) no longer collide, no longer crash on pre-existing
-  duplicate values, and apply to unique fields renamed with `fields`
-- fix: the Convex JWT cookie is also cleared when a request switches to a
-  different session without a sign-in path (multi-session `setActive`, admin
-  impersonation, email verification auto sign-in), so a cached JWT for the
-  previous account isn't served with `jwtCache`
-- chore: drop the unused `remeda` dependency
-- fix: the Convex JWT is signed with the algorithm in the Convex auth config,
-  and `/convex/jwks`, `rotateKeys` and `getLatestJwks` only use keys of that
-  algorithm, so the Convex plugin works next to the `jwt` plugin whichever
-  minted the first key
-- fix: `ConvexBetterAuthProvider` caches Convex JWTs per session instead of
-  freezing the first one: the SSR `initialToken` is no longer reused after
-  sign-out or for another session, fetched tokens are cached, and hydrating the
-  session behind an SSR token no longer re-authenticates (#398, #431)
-- feat: index `account.accountId_providerId_userId`, which Better Auth 1.7 reads
-  on every set, change and reset password; Local Install projects get it when
-  regenerating the schema
-- fix: `verbose` logs redact credential headers (`Cookie`, `Authorization`,
-  `Set-Cookie`, `Better-Auth-Cookie`, `Set-Better-Auth-Cookie`,
-  `Set-Auth-Token`, `Set-Auth-JWT`, `X-Api-Key`) and the query string of
-  `Location` and `Referer`; the CORS router's own header logging is off
-- fix: the cross-domain client no longer clears a session stored while an empty
-  `get-session` answer was in flight, e.g. right after a one-time token was
-  redeemed on page load
-- docs: the Next.js example's public `getUserById` query, which returned any
-  user to anyone, is removed; the `getAnyUserById` and Local Install snippets
-  check the caller
-- fix: no Convex JWT is issued on `get-session` for an expired session, and
-  `rotateKeys` and `getLatestJwks` work with a static JWKS again
-- fix: the Convex plugin turns `session.cookieCache` off and logs a warning when
-  it's enabled. The cookie cache isn't supported with Convex (#18, #73, #434),
-  and on Better Auth 1.7 an enabled cache made every `getSession` fall back to
-  the database and set the cookie again
-- fix: lookups by `id` return null for an id of another table or a string
-  that isn't an id, instead of another table's document or an error, and
-  `findOne` with OR clauses that all miss returns null instead of throwing
-- fix: `updateMany` updates and counts each matching row once when the update
-  moves rows within the index being scanned; it collects the matching ids and
-  then updates by id
-- fix: the Convex plugin warns when `advanced.database.generateId` is `"uuid"`.
-  Convex assigns document ids, so the option has no effect, and on Better Auth
-  1.7 it makes the core drop the ids verification reservations (single-use
-  locks) depend on, so they aren't enforced. Remove the option
+  supported, and compound unique indexes are rejected
+- breaking: sorting on a field without an index fails instead of returning rows
+  in creation order
+- breaking: Convex plugin endpoint keys renamed: `auth.api.getToken` →
+  `getConvexToken`, `getJwks` → `getConvexJwks`, `getOpenIdConfig` →
+  `getConvexOpenIdConfig` (#395)
+- fix: security hardening beyond 0.12.7: forwarded origin checks, the Convex JWT
+  cookie on session switch and expiry, JWT signing algorithm next to the `jwt`
+  plugin (#97), credentials redacted from verbose logs
+- fix: native `consumeOne` and `incrementOne`, and 1.7's verification
+  reservations work (#432); 1.7 schema columns (#435); `rateLimit.lastRequest`
+  index (#446)
+- fix: `AuthClient` accepts any client created with `convexClient()` (#393,
+  #420)
+- fix: adapter: `eq null` matches unset fields (#399), split pages aren't read
+  twice, `in` on a compound index no longer throws, `updateMany` updates a moved
+  row once, unique checks ignore nulls and pre-existing duplicates
+- fix: `ConvexBetterAuthProvider` caches tokens per session (#398, #431)
+- fix: `session.cookieCache` is turned off with a warning (#18, #73, #434)
+- Includes fixes ported from #430 by @sshkeda and #425 by @suhailopensource, and
+  fixes for issues reported by @helixnebulatech and ported from their fork
 
 ## 0.12.7
 
