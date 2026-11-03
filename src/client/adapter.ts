@@ -259,25 +259,24 @@ export const convexAdapter = <
       // Disable telemetry in all cases because it requires Node
       options.telemetry = { enabled: false };
 
-      const collectIdsForOrWhere = async (data: {
-        model: string;
-        where: (Where & { join?: undefined })[];
-      }) => {
-        const results = await asyncMap(data.where, async (w) =>
-          handlePagination(
-            async ({ paginationOpts }) => {
-              return await ctx.runQuery(api.adapter.findMany, {
-                model: data.model as TableNames,
-                where: parseWhere(w),
-                paginationOpts,
-              });
-            }
-          )
+      // The ids of the documents matching any of `branches`, each branch a
+      // conjunction, deduplicated.
+      const collectIds = async (
+        model: string,
+        branches: (Where & { join?: undefined })[][]
+      ) => {
+        const results = await asyncMap(branches, async (where) =>
+          handlePagination(async ({ paginationOpts }) => {
+            return await ctx.runQuery(api.adapter.findMany, {
+              model: model as TableNames,
+              where: parseWhere(where),
+              paginationOpts,
+            });
+          })
         );
-        const ids = dedupeDocsById(results.flatMap((r) => r.docs))
+        return dedupeDocsById(results.flatMap((r) => r.docs))
           .map((doc) => getDocId(doc))
           .flatMap((id) => (id ? [id] : []));
-        return ids;
       };
 
       // Requested verification ids mapped to their identifiers (see create).
@@ -518,10 +517,10 @@ export const convexAdapter = <
                 )) as FunctionHandle<"mutation">)
               : undefined;
           if (data.where?.some((w) => w.connector === "OR")) {
-            const ids = await collectIdsForOrWhere({
-              model: data.model as string,
-              where: data.where,
-            });
+            const ids = await collectIds(
+              data.model,
+              data.where.map((w) => [w])
+            );
             await asyncMap(ids, async (id) => {
               await ctx.runMutation(api.adapter.deleteOne, {
                 input: {
@@ -556,42 +555,36 @@ export const convexAdapter = <
                   config.authFunctions.onUpdate
                 )) as FunctionHandle<"mutation">)
               : undefined;
-          if (data.where?.some((w) => w.connector === "OR")) {
-            const ids = await collectIdsForOrWhere({
-              model: data.model as string,
-              where: data.where,
-            });
-            if (!ids.length) {
-              return 0;
-            }
-            const result = await handlePagination(
-              async ({ paginationOpts }) => {
-                return await ctx.runMutation(api.adapter.updateMany, {
-                  input: {
-                    model: data.model as TableNames,
-                    where: [{ field: "_id", operator: "in", value: ids }],
-                    update: data.update,
-                  },
-                  paginationOpts,
-                  onUpdateHandle: onUpdateHandle,
-                });
-              },
-              { limit: ids.length }
-            );
-            return result.count ?? 0;
-          }
-          const result = await handlePagination(async ({ paginationOpts }) => {
-            return await ctx.runMutation(api.adapter.updateMany, {
+          // Collect the matching ids first, then update by id. Updating while
+          // paginating over an index re-reads a row the update moves past
+          // the cursor, so it would be patched and counted twice.
+          const isOr = data.where?.some((w) => w.connector === "OR");
+          const ids = await collectIds(
+            data.model,
+            isOr ? data.where!.map((w) => [w]) : [data.where ?? []]
+          );
+          // The clauses are applied again inside the mutation, so a row that
+          // stopped matching since it was collected is left alone. OR clauses
+          // can't be (the component takes one at a time).
+          const guard = isOr ? [] : parseWhere(data.where);
+          let count = 0;
+          for (let i = 0; i < ids.length; i += 200) {
+            const chunk = ids.slice(i, i + 200);
+            const result = await ctx.runMutation(api.adapter.updateMany, {
               input: {
                 model: data.model as TableNames,
-                where: parseWhere(data.where),
+                where: [
+                  { field: "_id", operator: "in", value: chunk },
+                  ...guard,
+                ],
                 update: data.update,
               },
-              paginationOpts,
+              paginationOpts: { numItems: chunk.length, cursor: null },
               onUpdateHandle: onUpdateHandle,
             });
-          });
-          return result.count;
+            count += result.count ?? 0;
+          }
+          return count;
         },
         // Native atomic single-row consume. A Convex mutation is a
         // transaction, so the read and delete below cannot interleave with

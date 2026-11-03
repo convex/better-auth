@@ -1633,7 +1633,74 @@ describe("one-row lookups past a page of rejected rows", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 10. Ids that don't name a row of the model, and OR clauses that all miss
+// 10. updateMany when the update moves rows within the scanned index
+// ---------------------------------------------------------------------------
+
+describe("updateMany moving rows forward in the index it scans", () => {
+  // Patching a row so its indexed value lands after the cursor used to make
+  // the next page read it again; the where still matched, so the row was
+  // patched and counted twice.
+  const TOTAL = PAGE_SIZE + 50;
+
+  it("updates and counts each row once", async () => {
+    const h = await setup();
+    const now = Date.now();
+    await h.insertMany(
+      "session",
+      Array.from({ length: TOTAL }, (_, i) => ({
+        token: `token-${i}`,
+        userId: "user",
+        expiresAt: now + i,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    );
+    const count = await h.adapter.updateMany({
+      model: "session",
+      where: [{ field: "expiresAt", operator: "gt", value: now - 1 }],
+      update: { expiresAt: now + 1_000_000 },
+    });
+    expect(count).toBe(TOTAL);
+    const docs = await h.collect("session");
+    expect(docs).toHaveLength(TOTAL);
+    expect(docs.every((doc) => doc.expiresAt === now + 1_000_000)).toBe(true);
+  });
+
+  convexTestOnly("fires onUpdate once per row", async () => {
+    const h = convexTestHarness();
+    const now = Date.now();
+    await h.insertMany(
+      "user",
+      Array.from({ length: TOTAL }, (_, i) => ({
+        name: `user-${String(i).padStart(4, "0")}`,
+        email: `user-${i}@example.test`,
+        emailVerified: false,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    );
+    const count = await h.t.run(async (ctx) => {
+      const adapter = convexAdapter(ctx as any, profileApi, {
+        authFunctions: {
+          onUpdate: internal.testTriggerHandlers.userOnUpdateMarker,
+        },
+        triggers: { user: { onUpdate: async () => {} } },
+      })(convexSemanticsProfileOptions);
+      // `name` is indexed; every row moves to the end of that index.
+      return adapter.updateMany({
+        model: "user",
+        where: [{ field: "name", operator: "gt", value: "user-" }],
+        update: { name: "zzz" },
+      });
+    });
+    expect(count).toBe(TOTAL);
+    const users = await readUsers(h);
+    expect(users.filter((user) => user.image === "x")).toHaveLength(TOTAL);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 11. Ids that don't name a row of the model, and OR clauses that all miss
 // ---------------------------------------------------------------------------
 
 describe("lookups by id", () => {
@@ -1742,7 +1809,7 @@ describe("findOne with OR clauses", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 11. Backend behaviour the suite relies on (live deployment only)
+// 12. Backend behaviour the suite relies on (live deployment only)
 // ---------------------------------------------------------------------------
 
 describe("backend behaviour (live deployment)", () => {

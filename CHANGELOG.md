@@ -72,6 +72,9 @@
 - fix: lookups by `id` return null for an id of another table or a string
   that isn't an id, instead of another table's document or an error, and
   `findOne` with OR clauses that all miss returns null instead of throwing
+- fix: `updateMany` updates and counts each matching row once when the update
+  moves rows within the index being scanned; it collects the matching ids and
+  then updates by id
 
 ## 0.12.7
 
