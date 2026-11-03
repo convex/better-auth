@@ -330,6 +330,20 @@ describe.each(NULL_FIELDS)(
   }
 );
 
+describe("ids Better Auth supplies on create", () => {
+  it("drops the id and lets Convex assign one", async () => {
+    const h = await setup();
+    const row = await h.adapter.create<Row>({
+      model: "nullable",
+      data: { id: "chosen-by-better-auth", uniq: "a" },
+      forceAllowId: true,
+    });
+    expect(row.id).not.toBe("chosen-by-better-auth");
+    const docs = await h.collect("nullable");
+    expect(docIds(docs)).toEqual([row.id]);
+  });
+});
+
 describe("null handling on unique fields", () => {
   it("eq null tolerates several rows with a null unique value", async () => {
     const h = await setup();

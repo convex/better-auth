@@ -305,6 +305,7 @@ export const convexAdapter = <
           // replay checks) by inserting a row with a deterministic id, so a
           // second insert fails on the primary key. Convex assigns its own
           // ids, so the identifier is the first-writer-wins key instead.
+          // Any other id Better Auth supplies is dropped.
           const { _id: reservationId, ...createData } = data as {
             _id?: string;
             identifier?: string;
@@ -323,7 +324,7 @@ export const convexAdapter = <
             });
           }
           return ctx.runMutation(api.adapter.create, {
-            input: { model: model as any, data: data as any },
+            input: { model: model as any, data: createData as any },
             select,
             onCreateHandle: onCreateHandle,
           });
