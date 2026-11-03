@@ -59,11 +59,13 @@ installed component.
 
     ```
 
-    Generate the schema for the component.
+    Generate the schema for the component. Run the CLI at the same minor
+    version as `better-auth`; a newer CLI generates the schema for its own
+    Better Auth version.
 
     ```bash
     cd convex/betterAuth
-    npx auth generate
+    npx auth@1.7 generate
     ```
 
   </div>
@@ -193,7 +195,7 @@ CLI generate command.
 
 ```bash
 cd convex/betterAuth
-npx auth generate
+npx auth@1.7 generate
 ```
 
 ### Adding custom indexes
@@ -224,7 +226,7 @@ custom indexes aren't overwritten when the schema is regenerated.
 
     ```bash
     cd convex/betterAuth
-    npx auth generate --output generatedSchema.ts
+    npx auth@1.7 generate --output generatedSchema.ts
     ```
 
   </div>

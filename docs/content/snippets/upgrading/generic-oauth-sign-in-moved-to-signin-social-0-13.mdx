@@ -2,10 +2,11 @@
 
 ### Generic OAuth sign-in moved to `signIn.social`
 
-Better Auth 1.7 removed `authClient.signIn.oauth2()` and the
-`genericOAuthClient()` plugin, so remove the plugin from your auth client. Sign
-in to Generic OAuth providers with `authClient.signIn.social()`, passing the
-`providerId` from your `genericOAuth()` config as `provider`.
+Better Auth 1.7 removed `authClient.signIn.oauth2()`, `authClient.oauth2.link()`
+and the `genericOAuthClient()` plugin, so remove the plugin from your auth
+client. Sign in to Generic OAuth providers with `authClient.signIn.social()` and
+link them with `authClient.linkSocial()`, passing the `providerId` from your
+`genericOAuth()` config as `provider`.
 
 ```ts title="auth-client.ts"
 import { genericOAuthClient } from "better-auth/client/plugins"; // [!code --]
@@ -21,6 +22,8 @@ export const authClient = createAuthClient({
 ```ts
 await authClient.signIn.oauth2({ providerId: "slack" }); // [!code --]
 await authClient.signIn.social({ provider: "slack" }); // [!code ++]
+await authClient.oauth2.link({ providerId: "slack" }); // [!code --]
+await authClient.linkSocial({ provider: "slack" }); // [!code ++]
 ```
 
 </div>

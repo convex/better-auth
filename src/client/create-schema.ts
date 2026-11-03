@@ -30,7 +30,6 @@ export const indexFields = {
   session: ["expiresAt", ["expiresAt", "userId"]],
   verification: ["expiresAt", "identifier"],
   user: [["email", "name"], "name", "userId"],
-  oauthConsent: [["clientId", "userId"]],
 };
 
 // Return map of unique, sortable, and reference fields

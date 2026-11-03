@@ -10,12 +10,14 @@ them: `failedVerificationCount` and `lockedUntil` on `twoFactor`, `alg` and
 index on `account`, which Better Auth reads when a user sets, changes or resets
 a password. Without the index, each of those operations scans the whole table.
 
-Run the Better Auth CLI as `npx auth generate`, which replaces the older
-`npx @better-auth/cli generate` command.
+Run the Better Auth CLI as `npx auth@1.7 generate`, which replaces the older
+`npx @better-auth/cli generate` command. Keep the CLI on the same minor version
+as `better-auth`; a newer CLI generates the schema for its own Better Auth
+version. The CLI needs Node.js 22.12 or later.
 
 ```npm
 cd convex/betterAuth
-npx auth generate
+npx auth@1.7 generate
 ```
 
 If your options include the `oidcProvider` plugin, remove it before you generate
