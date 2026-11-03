@@ -75,6 +75,10 @@
 - fix: `updateMany` updates and counts each matching row once when the update
   moves rows within the index being scanned; it collects the matching ids and
   then updates by id
+- fix: the Convex plugin warns when `advanced.database.generateId` is `"uuid"`.
+  Convex assigns document ids, so the option has no effect, and on Better Auth
+  1.7 it makes the core drop the ids verification reservations (single-use
+  locks) depend on, so they aren't enforced. Remove the option
 
 ## 0.12.7
 

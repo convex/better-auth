@@ -37,6 +37,13 @@ in Convex.
   always read from the database. If it's enabled in your Better Auth options,
   the Convex plugin turns it off and logs a warning.
 
+- #### Id generation
+
+  Convex assigns document ids, so `advanced.database.generateId` has no effect
+  and shouldn't be set. Don't set it to `"uuid"`: on Better Auth 1.7 that stops
+  the single-use locks Better Auth takes through verification reservations from
+  being enforced. The Convex plugin logs a warning while it is set.
+
 ## Using server methods with `auth.api`
 
 Better Auth's server side `auth.api` methods can be used with your `createAuth`

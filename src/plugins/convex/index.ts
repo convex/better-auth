@@ -319,6 +319,16 @@ export const convex = (opts: {
         );
         options.session.cookieCache.enabled = false;
       }
+      // Convex assigns document ids, so generateId has no effect, except that
+      // in "uuid" mode Better Auth drops the ids it reserves verification
+      // values by (single-use locks) before the adapter sees them, and every
+      // reservation succeeds. The adapter can't tell those creates apart
+      // without the id, so warn here.
+      if (options.advanced?.database?.generateId === "uuid") {
+        logger.warn(
+          '[convex-better-auth] advanced.database.generateId: "uuid" has no effect with Convex, which assigns document ids, and it stops Better Auth\'s verification reservations (single-use locks) from being enforced. Remove the option.'
+        );
+      }
       if (options.basePath !== "/api/auth" && !opts.options?.basePath) {
         // eslint-disable-next-line no-console
         console.warn(
