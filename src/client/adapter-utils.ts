@@ -1,6 +1,6 @@
 import { asyncMap } from "convex-helpers";
 import { v } from "convex/values";
-import type { GenericId, Infer } from "convex/values";
+import type { Infer } from "convex/values";
 import type {
   DocumentByName,
   GenericDataModel,
@@ -642,6 +642,22 @@ const unservedSort = (
   };
 };
 
+// Look a document up by an id Better Auth passed in. Ids come from requests
+// (admin and organization routes take them from the body), so one may be
+// malformed or belong to another table; both mean "no such document" rather
+// than an error or another table's document.
+const getById = async (
+  ctx: GenericQueryCtx<GenericDataModel>,
+  table: string,
+  value: unknown
+) => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const id = ctx.db.normalizeId(table as any, value);
+  return id ? await ctx.db.get(table as any, id) : null;
+};
+
 // This is the core function for reading from the database, it parses and
 // validates where conditions, selects indexes, and allows the caller to
 // optionally paginate as needed. Every response is a pagination result.
@@ -703,9 +719,7 @@ export const paginate = async <
     }
     const doc =
       uniqueWhere.field === "_id"
-        ? // Unfortunately this is one place where tests pass in UUIDs as values and convex-test doesn't support them
-          // eslint-disable-next-line @convex-dev/explicit-table-ids
-          await ctx.db.get(uniqueWhere.value as GenericId<T>)
+        ? await getById(ctx, args.model, uniqueWhere.value)
         : await ctx.db
             .query(args.model as any)
             .withIndex(index?.indexDescriptor as any, (q) =>
@@ -747,7 +761,7 @@ export const paginate = async <
     // For ids, just use asyncMap + .get()
     if (inWhere.field === "_id") {
       const docs = await asyncMap(inWhere.value as any[], async (value) => {
-        return ctx.db.get(args.model, value as GenericId<T>);
+        return getById(ctx, args.model, value);
       });
       const filteredDocs = docs
         .flatMap((doc) => (doc ? [doc] : []))

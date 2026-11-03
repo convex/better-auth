@@ -349,7 +349,10 @@ export const convexAdapter = <
               select: data.select,
             });
           }
-          if (data.where?.every((w) => w.connector === "OR")) {
+          if (
+            data.where?.length &&
+            data.where.every((w) => w.connector === "OR")
+          ) {
             for (const w of data.where) {
               const result = await ctx.runQuery(api.adapter.findOne, {
                 model: data.model as TableNames,
@@ -361,6 +364,9 @@ export const convexAdapter = <
                 return result;
               }
             }
+            // No branch matched. The component takes one OR clause at a time,
+            // so don't fall through to a query with all of them.
+            return null;
           }
           return await ctx.runQuery(api.adapter.findOne, {
             model: data.model as TableNames,

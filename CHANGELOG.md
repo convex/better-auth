@@ -69,6 +69,9 @@
   it's enabled. The cookie cache isn't supported with Convex (#18, #73, #434),
   and on Better Auth 1.7 an enabled cache made every `getSession` fall back to
   the database and set the cookie again
+- fix: lookups by `id` return null for an id of another table or a string
+  that isn't an id, instead of another table's document or an error, and
+  `findOne` with OR clauses that all miss returns null instead of throwing
 
 ## 0.12.7
 

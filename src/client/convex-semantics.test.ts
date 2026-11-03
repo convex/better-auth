@@ -1633,7 +1633,116 @@ describe("one-row lookups past a page of rejected rows", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 10. Backend behaviour the suite relies on (live deployment only)
+// 10. Ids that don't name a row of the model, and OR clauses that all miss
+// ---------------------------------------------------------------------------
+
+describe("lookups by id", () => {
+  // Better Auth passes ids straight from requests (admin and organization
+  // routes take them from the body). An id of another table or a string that
+  // isn't an id means "no such row", never another table's row or an error.
+  const seed = async (h: Harness) => {
+    const now = Date.now();
+    const [user] = await h.insertMany("user", [
+      {
+        name: "owner",
+        email: "owner@example.test",
+        emailVerified: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    const [session] = await h.insertMany("session", [
+      {
+        token: "token",
+        userId: user!,
+        expiresAt: now + 60_000,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    return { user: user!, session: session! };
+  };
+
+  it("returns null for an id of another table", async () => {
+    const h = await setup();
+    const { session } = await seed(h);
+    const where: Where[] = [{ field: "id", value: session }];
+    expect(await h.adapter.findOne({ model: "user", where })).toBeNull();
+    expect(
+      await h.adapter.findMany({
+        model: "user",
+        where: [{ field: "id", operator: "in", value: [session] }],
+      })
+    ).toEqual([]);
+    expect(
+      await h.adapter.update({ model: "user", where, update: { name: "x" } })
+    ).toBeNull();
+    expect(await h.adapter.count({ model: "user", where })).toBe(0);
+  });
+
+  it("returns null for a string that isn't an id", async () => {
+    const h = await setup();
+    await seed(h);
+    const where: Where[] = [{ field: "id", value: "not-an-id" }];
+    expect(await h.adapter.findOne({ model: "user", where })).toBeNull();
+    expect(
+      await h.adapter.findMany({
+        model: "user",
+        where: [{ field: "id", operator: "in", value: ["not-an-id"] }],
+      })
+    ).toEqual([]);
+    expect(
+      await h.adapter.update({ model: "user", where, update: { name: "x" } })
+    ).toBeNull();
+  });
+
+  it("still finds the row by its own id", async () => {
+    const h = await setup();
+    const { user } = await seed(h);
+    await expect(
+      h.adapter.findOne<Row>({
+        model: "user",
+        where: [{ field: "id", value: user }],
+      })
+    ).resolves.toMatchObject({ id: user, name: "owner" });
+  });
+});
+
+describe("findOne with OR clauses", () => {
+  const seed = (h: Harness) =>
+    h.insertMany("nullable", [{ plain: "a" }, { plain: "b" }]);
+
+  it("returns null when every branch misses", async () => {
+    const h = await setup();
+    await seed(h);
+    expect(
+      await h.adapter.findOne({
+        model: "nullable",
+        where: [
+          { field: "plain", value: "x", connector: "OR" },
+          { field: "plain", value: "y", connector: "OR" },
+        ],
+      })
+    ).toBeNull();
+  });
+
+  it("returns the row of the first branch that hits", async () => {
+    const h = await setup();
+    const [, b] = await seed(h);
+    await expect(
+      h.adapter.findOne<Row>({
+        model: "nullable",
+        where: [
+          { field: "plain", value: "x", connector: "OR" },
+          { field: "plain", value: "b", connector: "OR" },
+        ],
+      })
+    ).resolves.toMatchObject({ id: b });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 11. Backend behaviour the suite relies on (live deployment only)
 // ---------------------------------------------------------------------------
 
 describe("backend behaviour (live deployment)", () => {
