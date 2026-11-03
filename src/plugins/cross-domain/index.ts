@@ -4,7 +4,6 @@ import { generateRandomString } from "better-auth/crypto";
 import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 import { oneTimeToken as oneTimeTokenPlugin } from "better-auth/plugins/one-time-token";
 import { z } from "zod";
-import { VERSION } from "../../version.js";
 
 export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
   const oneTimeToken = oneTimeTokenPlugin();
@@ -45,7 +44,6 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
 
   return {
     id: "cross-domain",
-    version: VERSION,
     // Adds siteUrl to trustedOrigins so the one-time token is issued
     // for redirects to it even when the app's own list omits it.
     init() {

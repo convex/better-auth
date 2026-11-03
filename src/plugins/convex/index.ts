@@ -10,7 +10,6 @@ import { jwt as jwtPlugin } from "better-auth/plugins/jwt";
 import type { JwtOptions, Jwk } from "better-auth/plugins/jwt";
 import { omit } from "convex-helpers";
 import type { AuthConfig, AuthProvider } from "convex/server";
-import { VERSION } from "../../version.js";
 
 export const JWT_COOKIE_NAME = "convex_jwt";
 
@@ -234,7 +233,6 @@ export const convex = (opts: {
 
   return {
     id: "convex",
-    version: VERSION,
     init: (ctx) => {
       const { options, logger: _logger } = ctx;
       if (options.basePath !== "/api/auth" && !opts.options?.basePath) {
