@@ -30,7 +30,7 @@ describe("eq null guards on plugin fields", () => {
 
   it("increments under an eq null guard on an unset numeric field", async () => {
     const { adapter } = setup();
-    // Mirrors @better-auth/oauth-provider refresh-token rotation, which
+    // Mirrors refresh-token rotation in OAuth provider plugins, which
     // increments under a `revoked eq null` guard on a never-set field.
     const user = await adapter.create({
       model: "user",

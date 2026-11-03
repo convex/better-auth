@@ -207,7 +207,7 @@ describe("convex plugin OpenID discovery document", () => {
     expect(body).not.toHaveProperty("end_session_endpoint");
   });
 
-  it("uses endpoint keys that the jwt and oauth-provider plugins do not", () => {
+  it("uses endpoint keys that other Better Auth plugins do not", () => {
     const plugin = convex({ authConfig });
     expect(Object.keys(plugin.endpoints)).toEqual([
       "getConvexOpenIdConfig",

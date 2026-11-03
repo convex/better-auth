@@ -377,9 +377,9 @@ export const convex = (opts: {
       ],
     },
     // Endpoint keys are prefixed with "Convex" because Better Auth merges
-    // plugin endpoints by key: the jwt plugin's own `getToken`/`getJwks` and
-    // the oauth-provider plugin's `getOpenIdConfig` would otherwise shadow
-    // these when an app adds those plugins itself (#395). Client paths are
+    // plugin endpoints by key: the jwt plugin's own `getToken`/`getJwks`, or
+    // another plugin's `getOpenIdConfig`, would otherwise shadow these when an
+    // app adds those plugins itself (#395). Client paths are
     // derived from the endpoint path, so `authClient.convex.token()` is
     // unchanged.
     endpoints: {

@@ -23,14 +23,20 @@
   Dynamic `baseURL` configs resolve on Better Auth 1.7 without
   `advanced.trustedProxyHeaders`
 - fix: `AuthClient` type is structural so real auth clients are assignable again
-- breaking: the Convex plugin serves its OpenID discovery document directly and
-  no longer advertises `/oauth2/*` endpoints that nothing served; the removed
-  `oidcProvider` plugin's `oauthApplication`, `oauthAccessToken` and
-  `oauthConsent` tables are no longer in the component schema (data is kept, see
-  the Upgrading guide)
+- breaking: acting as an OpenID provider (`oidcProvider`) is no longer
+  supported: Better Auth 1.7 removed the plugin, and providing OpenID on 1.7
+  requires compound unique indexes, which the Convex adapter doesn't support
+  (schema generation and the adapter throw on them). The removed plugin's
+  `oauthApplication`, `oauthAccessToken` and `oauthConsent` tables are no longer
+  in the component schema (data is kept, see the Upgrading guide). The Convex
+  plugin serves its OpenID discovery document directly and no longer advertises
+  `/oauth2/*` endpoints that nothing served
 - breaking: Convex plugin endpoint keys renamed to `getConvexToken`,
   `getConvexJwks` and `getConvexOpenIdConfig` to avoid being shadowed by the
-  `jwt` and `oauth-provider` plugins (#395); HTTP paths are unchanged
+  `jwt` plugin and other plugins' endpoints (#395); HTTP paths are unchanged
+- fix: unique checks skip null and unset values, so rows with a cleared unique
+  field (e.g. username) no longer collide, no longer crash on pre-existing
+  duplicate values, and apply to unique fields renamed with `fields`
 - fix: the Convex JWT cookie is also cleared when a request switches to a
   different session without a sign-in path (multi-session `setActive`, admin
   impersonation, email verification auto sign-in), so a cached JWT for the
