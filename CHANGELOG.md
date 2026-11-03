@@ -26,7 +26,8 @@
   #420)
 - fix: adapter: `eq null` matches unset fields (#399), split pages aren't read
   twice, `in` on a compound index no longer throws, `updateMany` updates a moved
-  row once, unique checks ignore nulls and pre-existing duplicates
+  row once, unique checks ignore nulls and pre-existing duplicates, a second
+  account with the same `providerId` and `accountId` is rejected
 - fix: `ConvexBetterAuthProvider` caches tokens per session (#398, #431)
 - fix: `session.cookieCache` is turned off with a warning (#18, #73, #434)
 - Includes fixes ported from #430 by @sshkeda and #425 by @suhailopensource, and

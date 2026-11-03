@@ -206,3 +206,43 @@ describe("field-level unique checks", () => {
     ).rejects.toThrow("user email_address already exists");
   });
 });
+
+describe("account provider key", () => {
+  const account = (userId: string, providerId: string, accountId: string) => ({
+    model: "account",
+    data: {
+      userId,
+      providerId,
+      accountId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  });
+
+  it("rejects a second account with the same providerId and accountId", async () => {
+    const { adapter } = setup();
+    const a = await adapter.create<{ id: string }>({
+      model: "user",
+      data: {
+        name: "a",
+        email: "a@x.com",
+        emailVerified: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    await adapter.create(account(a.id, "github", "123"));
+    // Same pair, same or another user.
+    await expect(
+      adapter.create(account(a.id, "github", "123"))
+    ).rejects.toThrow(
+      'account with providerId "github" and accountId "123" already exists'
+    );
+    await expect(
+      adapter.create(account("someone-else", "github", "123"))
+    ).rejects.toThrow("already exists");
+    // Same accountId at another provider, or another accountId, is fine.
+    await adapter.create(account(a.id, "google", "123"));
+    await adapter.create(account(a.id, "github", "456"));
+  });
+});

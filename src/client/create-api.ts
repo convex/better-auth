@@ -10,6 +10,7 @@ import { asyncMap } from "convex-helpers";
 import { partial } from "convex-helpers/validators";
 import {
   adapterWhereValidator,
+  checkAccountKeyAvailable,
   checkFieldsAvailable,
   checkUniqueFields,
   hasUniqueFields,
@@ -98,6 +99,13 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
           args.input.model,
           args.input.data,
           args.unique ?? []
+        );
+        await checkAccountKeyAvailable(
+          ctx,
+          schema,
+          betterAuthSchema,
+          args.input.model,
+          args.input.data
         );
         const id = await ctx.db.insert(
           args.input.model as any,

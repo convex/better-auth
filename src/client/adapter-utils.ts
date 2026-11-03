@@ -368,6 +368,58 @@ export const checkFieldsAvailable = async (
   }
 };
 
+// Better Auth looks accounts up by providerId and accountId and, since 1.7,
+// fails the lookup when more than one row matches, but it never declares the
+// pair unique and reads then inserts in two calls. Reject a second account
+// with the same pair here: a Convex mutation is a transaction, so the check
+// and the insert can't interleave.
+export const checkAccountKeyAvailable = async (
+  ctx: GenericQueryCtx<GenericDataModel>,
+  schema: SchemaDefinition<any, any>,
+  betterAuthSchema: BetterAuthDBSchema,
+  table: string,
+  input: Record<string, any>
+) => {
+  const account = betterAuthSchema.account;
+  if (!account || (account.modelName ?? "account") !== table) {
+    return;
+  }
+  const providerIdField = account.fields.providerId?.fieldName ?? "providerId";
+  const accountIdField = account.fields.accountId?.fieldName ?? "accountId";
+  const providerId = input[providerIdField];
+  const accountId = input[accountIdField];
+  if (providerId == null || accountId == null) {
+    return;
+  }
+  const found = findIndex(schema, {
+    model: table,
+    where: [
+      { field: accountIdField, operator: "eq", value: accountId },
+      { field: providerIdField, operator: "eq", value: providerId },
+    ],
+  });
+  if (!found?.index) {
+    throw new Error(
+      `No index found for ${table}.${accountIdField}, ${providerIdField}`
+    );
+  }
+  const { index, values } = found;
+  const existingDoc = await ctx.db
+    .query(table as any)
+    .withIndex(index.indexDescriptor, (q: any) => {
+      for (const [idx, value] of values.eq.entries()) {
+        q = q.eq(index.fields[idx], value);
+      }
+      return q;
+    })
+    .first();
+  if (existingDoc) {
+    throw new Error(
+      `${table} with ${providerIdField} ${JSON.stringify(providerId)} and ${accountIdField} ${JSON.stringify(accountId)} already exists`
+    );
+  }
+};
+
 // Compare two field values for an in-memory sortBy. A missing or null value
 // sorts before every present value (nulls first ascending, last descending,
 // as in Better Auth's memory adapter) and missing values compare equal to
