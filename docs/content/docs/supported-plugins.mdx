@@ -31,3 +31,7 @@ Official Better Auth plugins that are incompatible with Convex + Better Auth
 - [SCIM](https://www.better-auth.com/docs/plugins/scim) - requires a database
   adapter that supports Better Auth transactions, which are incompatible with
   how Convex transactions work.
+- [OAuth Provider](https://www.better-auth.com/docs/plugins/oauth-provider) -
+  requires compound unique indexes, which the Convex adapter doesn't support.
+- [MCP](https://www.better-auth.com/docs/plugins/mcp) - built on the OAuth
+  Provider plugin.
