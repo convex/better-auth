@@ -322,7 +322,7 @@ export const checkUniqueFields = async <
         where: [{ field, operator: "eq", value }],
       }) || {};
     if (!index) {
-      throw new Error(`No index found for ${table}${field}`);
+      throw new Error(`No index found for ${table}.${field}`);
     }
     // take(2) rather than unique(): pre-existing duplicates must not crash
     // the check, and the document being updated is not a conflict.
@@ -356,7 +356,7 @@ export const checkFieldsAvailable = async (
         where: [{ field, operator: "eq", value }],
       }) || {};
     if (!index) {
-      throw new Error(`No index found for ${table}${field}`);
+      throw new Error(`No index found for ${table}.${field}`);
     }
     const existingDoc = await ctx.db
       .query(table as any)
