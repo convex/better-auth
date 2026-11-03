@@ -57,17 +57,28 @@ export const changePassword = mutation({
 
 ## `getAnyUserById()`
 
-Returns a user by their Better Auth user id.
+Returns a user by their Better Auth user id. The method doesn't check who is
+asking, and the user document includes fields like the email address. Public
+queries can be called by anyone, so check the caller and return only the fields
+they need.
 
 ```ts
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import { authComponent } from "./auth";
 
-export const getUser = query({
-  args: { id: v.id("user") },
+export const getUserProfile = query({
+  args: { id: v.string() },
   handler: async (ctx, args) => {
-    return authComponent.getAnyUserById(ctx, args.id);
+    const viewer = await authComponent.safeGetAuthUser(ctx);
+    if (!viewer) {
+      return null;
+    }
+    const user = await authComponent.getAnyUserById(ctx, args.id);
+    if (!user) {
+      return null;
+    }
+    return { name: user.name, image: user.image };
   },
 });
 ```

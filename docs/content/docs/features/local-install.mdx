@@ -261,7 +261,9 @@ Note that if an internal function is defined in a component, it will not be
 accessible from outside the component, so functions that need to run outside the
 component cannot be internal. While normally public functions are exposed to the
 internet, **Convex functions exported by a component are never exposed to the
-internet, even if they are public**.
+internet, even if they are public**. A public function in your app that calls
+them is exposed, though, so check who is calling it there and return only the
+fields the caller needs.
 
 <Callout title="Return validators">
   If a function in a component is called from outside the component, the return
@@ -269,9 +271,7 @@ internet, even if they are public**.
 </Callout>
 
 ```ts title="convex/betterAuth/someFile.ts"
-import { query, mutation } from "./_generated/server";
-import { doc } from "convex-helpers/validators";
-import schema from "./schema";
+import { query, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
 // This is accessible from outside the component
@@ -279,9 +279,18 @@ export const someFunction = query({
   args: { sessionId: v.id("session") },
   // Add a return validator so the return value is typed when
   // called from outside the component.
-  returns: v.union(v.null(), doc(schema, "session")),
+  returns: v.union(
+    v.null(),
+    v.object({ userId: v.string(), expiresAt: v.number() })
+  ),
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.sessionId);
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      return null;
+    }
+    // Return only the fields callers need. The session document also holds
+    // the session token, which authenticates as the user.
+    return { userId: session.userId, expiresAt: session.expiresAt };
   },
 });
 
@@ -300,13 +309,25 @@ These functions can now be called from a parent component (or app).
 import { query } from "./_generated/server";
 import { components } from "./_generated/api";
 import { v } from "convex/values";
+import { authComponent } from "./auth";
 
+// Public functions can be called by anyone, so check who is asking.
 export const someFunction = query({
-  args: { sessionId: v.id("session") },
+  args: { sessionId: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.runQuery(components.betterAuth.someFile.someFunction, {
-      sessionId: args.sessionId,
-    });
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user) {
+      return null;
+    }
+    const session = await ctx.runQuery(
+      components.betterAuth.someFile.someFunction,
+      { sessionId: args.sessionId }
+    );
+    // Only return the caller's own sessions.
+    if (!session || session.userId !== user._id) {
+      return null;
+    }
+    return session;
   },
 });
 ```
