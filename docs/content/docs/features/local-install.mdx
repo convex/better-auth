@@ -276,7 +276,8 @@ import { v } from "convex/values";
 
 // This is accessible from outside the component
 export const someFunction = query({
-  args: { sessionId: v.id("session") },
+  // Callers outside the component pass ids as strings.
+  args: { sessionId: v.string() },
   // Add a return validator so the return value is typed when
   // called from outside the component.
   returns: v.union(
@@ -284,7 +285,8 @@ export const someFunction = query({
     v.object({ userId: v.string(), expiresAt: v.number() })
   ),
   handler: async (ctx, args) => {
-    const session = await ctx.db.get(args.sessionId);
+    const sessionId = ctx.db.normalizeId("session", args.sessionId);
+    const session = sessionId ? await ctx.db.get(sessionId) : null;
     if (!session) {
       return null;
     }
