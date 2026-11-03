@@ -20,6 +20,18 @@ export const authComponent = createClient(
 );
 ```
 
+<Callout type="warn">
+  Verbose logs are visible to anyone with access to your deployment logs, so
+  only enable them while debugging. Request and response headers are logged
+  with credential headers (`Cookie`, `Authorization`, `Set-Cookie`,
+  `Better-Auth-Cookie`, `Set-Better-Auth-Cookie`, `Set-Auth-Token`,
+  `Set-Auth-JWT`, `X-Api-Key`) redacted, and without the query string of
+  `Location` and `Referer`. Verbose mode also turns on the Better Auth adapter
+  `debugLogs`, which log full database rows unredacted, including session
+  tokens, password hashes, OAuth tokens and verification values such as
+  password reset tokens and one-time codes.
+</Callout>
+
 ### Client side
 
 Verbose logs in the client can be enabled on the Convex client constructor.

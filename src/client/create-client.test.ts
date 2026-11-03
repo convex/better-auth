@@ -360,3 +360,84 @@ describe("createClient route registration", () => {
     expect(createAuth).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("createClient verbose logging", () => {
+  const requestSecrets = {
+    cookie: "better-auth.session_token=cookie-secret",
+    authorization: "Bearer authorization-secret",
+    "better-auth-cookie": "better-auth.session_token=cross-domain-secret",
+    "x-api-key": "api-key-secret",
+    referer: "https://app.example.com/callback?code=referer-secret",
+  };
+  const makeAuth = () => ({
+    handler: async () => {
+      const headers = new Headers({
+        "set-better-auth-cookie": "set-better-auth-cookie-secret",
+        "set-auth-token": "set-auth-token-secret",
+        "set-auth-jwt": "set-auth-jwt-secret",
+        location: "https://app.example.com/dashboard?ott=location-secret",
+      });
+      headers.append("set-cookie", "a=set-cookie-secret; Path=/");
+      return new Response("ok", { headers });
+    },
+    options: { trustedOrigins: ["https://app.example.com"] },
+    $context: Promise.resolve({
+      options: { trustedOrigins: ["https://app.example.com"] },
+    }),
+  });
+
+  it.each([
+    ["registerRoutes", false],
+    ["registerRoutes", true],
+    ["registerRoutesLazy", false],
+    ["registerRoutesLazy", true],
+  ] as const)(
+    "%s (cors: %s) redacts credentials in logged headers",
+    async (register, cors) => {
+      const client = createClient(component, { verbose: true });
+      const http = httpRouter();
+      client[register](http, makeAuth, { cors });
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        const response = await getRouteHandler(
+          http,
+          "/api/auth/get-session",
+          "GET"
+        )!._handler(
+          {},
+          new Request("https://example.convex.site/api/auth/get-session", {
+            headers: { ...requestSecrets, origin: "https://app.example.com" },
+          })
+        );
+        expect(response.status).toBe(200);
+        // Headers serialize to {} in JSON, flatten them like a console would
+        const logged = JSON.stringify(log.mock.calls, (_key, value) =>
+          value instanceof Headers ? Array.from(value.entries()) : value
+        );
+        expect(logged).toContain("request headers");
+        expect(logged).toContain("response headers");
+        expect(logged).toContain("[redacted]");
+        // Redirect targets stay visible, without their query string
+        expect(logged).toContain(
+          "https://app.example.com/dashboard?[redacted]"
+        );
+        for (const secret of [
+          "cookie-secret",
+          "authorization-secret",
+          "cross-domain-secret",
+          "api-key-secret",
+          "referer-secret",
+          "set-cookie-secret",
+          "set-better-auth-cookie-secret",
+          "set-auth-token-secret",
+          "set-auth-jwt-secret",
+          "location-secret",
+        ]) {
+          expect(logged).not.toContain(secret);
+        }
+      } finally {
+        log.mockRestore();
+      }
+    }
+  );
+});

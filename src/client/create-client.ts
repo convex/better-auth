@@ -224,6 +224,34 @@ const normalizeRequestOrigin = (
  * @param config.triggers - Triggers configuration.
  * @param config.authFunctions - Authentication functions configuration.
  */
+// Verbose logs end up in the Convex dashboard and log streams, and get pasted
+// into issues. Keep credentials (session cookies, bearer tokens, JWTs, API
+// keys) out of them.
+const SENSITIVE_HEADERS = new Set([
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "better-auth-cookie",
+  "set-better-auth-cookie",
+  "set-auth-token",
+  "set-auth-jwt",
+  "x-api-key",
+]);
+// Redirects carry one-time tokens, OAuth codes and state in the query string
+const redactQuery = (value: string) => {
+  const queryStart = value.indexOf("?");
+  return queryStart === -1 ? value : `${value.slice(0, queryStart)}?[redacted]`;
+};
+const redactHeaders = (headers: Headers) =>
+  Array.from(headers.entries()).map(([name, value]) => [
+    name,
+    SENSITIVE_HEADERS.has(name)
+      ? "[redacted]"
+      : name === "location" || name === "referer"
+        ? redactQuery(value)
+        : value,
+  ]);
+
 export const createClient = <
   DataModel extends GenericDataModel,
   Schema extends SchemaDefinition<GenericSchema, true> = typeof defaultSchema,
@@ -495,7 +523,7 @@ export const createClient = <
           // eslint-disable-next-line no-console
           console.log("options.baseURL", staticAuth.options.baseURL);
           // eslint-disable-next-line no-console
-          console.log("request headers", request.headers);
+          console.log("request headers", redactHeaders(request.headers));
         }
         const auth = createAuth(ctx as any);
         const normalizedRequest = normalizeRequestOrigin(
@@ -505,7 +533,7 @@ export const createClient = <
         const response = await auth.handler(normalizedRequest);
         if (config?.verbose) {
           // eslint-disable-next-line no-console
-          console.log("response headers", response.headers);
+          console.log("response headers", redactHeaders(response.headers));
         }
         return response;
       });
@@ -582,7 +610,9 @@ export const createClient = <
         exposedHeaders: ["Set-Better-Auth-Cookie"].concat(
           corsOpts.exposedHeaders ?? []
         ),
-        debug: config?.verbose,
+        // The CORS router logs raw request and response headers, which carry
+        // credentials. The verbose logs above print them redacted.
+        debug: false,
         enforceAllowOrigins: false,
       });
 
@@ -618,7 +648,7 @@ export const createClient = <
           // eslint-disable-next-line no-console
           console.log("options.baseURL", getRegistrationAuth().options.baseURL);
           // eslint-disable-next-line no-console
-          console.log("request headers", request.headers);
+          console.log("request headers", redactHeaders(request.headers));
         }
         const auth = createAuth(ctx as any);
         const normalizedRequest = normalizeRequestOrigin(
@@ -628,7 +658,7 @@ export const createClient = <
         const response = await auth.handler(normalizedRequest);
         if (config?.verbose) {
           // eslint-disable-next-line no-console
-          console.log("response headers", response.headers);
+          console.log("response headers", redactHeaders(response.headers));
         }
         return response;
       });
@@ -698,7 +728,9 @@ export const createClient = <
         exposedHeaders: ["Set-Better-Auth-Cookie"].concat(
           corsOpts.exposedHeaders ?? []
         ),
-        debug: config?.verbose,
+        // The CORS router logs raw request and response headers, which carry
+        // credentials. The verbose logs above print them redacted.
+        debug: false,
         enforceAllowOrigins: false,
       });
 
