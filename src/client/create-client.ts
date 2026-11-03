@@ -210,20 +210,6 @@ const normalizeRequestOrigin = (
   });
 };
 
-/**
- * Backend API for the Better Auth component.
- * Responsible for exposing the `client` and `triggers` APIs to the client, http
- * route registration, and having convenience methods for interacting with the
- * component from the backend.
- *
- * @param component - Generally `components.betterAuth` from
- * `./_generated/api` once you've configured it in `convex.config.ts`.
- * @param config - Configuration options for the component.
- * @param config.local - Local schema configuration.
- * @param config.verbose - Whether to enable verbose logging.
- * @param config.triggers - Triggers configuration.
- * @param config.authFunctions - Authentication functions configuration.
- */
 // Verbose logs end up in the Convex dashboard and log streams, and get pasted
 // into issues. Keep credentials (session cookies, bearer tokens, JWTs, API
 // keys) out of them.
@@ -252,6 +238,20 @@ const redactHeaders = (headers: Headers) =>
         : value,
   ]);
 
+/**
+ * Backend API for the Better Auth component.
+ * Responsible for exposing the `client` and `triggers` APIs to the client, http
+ * route registration, and having convenience methods for interacting with the
+ * component from the backend.
+ *
+ * @param component - Generally `components.betterAuth` from
+ * `./_generated/api` once you've configured it in `convex.config.ts`.
+ * @param config - Configuration options for the component.
+ * @param config.local - Local schema configuration.
+ * @param config.verbose - Whether to enable verbose logging.
+ * @param config.triggers - Triggers configuration.
+ * @param config.authFunctions - Authentication functions configuration.
+ */
 export const createClient = <
   DataModel extends GenericDataModel,
   Schema extends SchemaDefinition<GenericSchema, true> = typeof defaultSchema,

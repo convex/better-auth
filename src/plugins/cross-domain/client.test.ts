@@ -272,6 +272,30 @@ describe("crossDomainClient", () => {
       expect(storage.get(cookieName)).toBe("{}");
     });
 
+    it("still clears a rejected session when only an unrelated cookie changed", async () => {
+      storage.set(cookieName, JSON.stringify({
+        "better-auth.session_token": { value: "stale", expires: null },
+        "better-auth.two_factor": { value: "new-challenge", expires: null },
+      }));
+
+      const onSuccess = getOnSuccessHook();
+      await onSuccess({
+        data: null,
+        request: {
+          url: new URL("https://example.com/api/auth/get-session"),
+          headers: new Headers({
+            "better-auth-cookie":
+              "better-auth.session_token=stale; better-auth.two_factor=old-challenge",
+          }),
+        },
+        response: { headers: new Headers() },
+      } as any);
+
+      const result = JSON.parse(storage.get(cookieName)!);
+      expect(result["better-auth.session_token"]).toBeUndefined();
+      expect(result["better-auth.two_factor"]).toEqual({ value: "new-challenge", expires: null });
+    });
+
     it("preserves cookies when get-session returns data", async () => {
       const existingCookies = JSON.stringify({
         "better-auth.session_token": { value: "valid", expires: null },

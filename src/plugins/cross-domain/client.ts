@@ -54,6 +54,9 @@ export function getSetCookie(header: string, prevCookie?: string) {
   return JSON.stringify(toSetCookie);
 }
 
+const sessionTokenOf = (cookieHeader: string) =>
+  cookieHeader.split("; ").find((cookie) => cookie.includes(".session_token="));
+
 export function getCookie(cookie: string) {
   let parsed = {} as Record<string, StoredCookie>;
   try {
@@ -200,15 +203,18 @@ export const crossDomainClient = (
             ) {
               const data = context.data;
               storage.setItem(localCacheName, JSON.stringify(data));
-              // The stored cookie changed while this request was in flight,
-              // e.g. a one-time token was redeemed: the null answer is about
-              // the cookie sent, so it must not clear the new session.
+              // The stored session token changed while this request was in
+              // flight, e.g. a one-time token was redeemed: the null answer
+              // is about the token sent, so it must not clear the new one.
               const sentCookie =
                 context.request.headers?.get?.("better-auth-cookie") ?? null;
-              const cookieChanged =
+              const sessionTokenChanged =
                 sentCookie !== null &&
-                sentCookie !== getCookie(storage.getItem(cookieName) || "{}");
-              if (data === null && !cookieChanged) {
+                sessionTokenOf(sentCookie) !==
+                  sessionTokenOf(
+                    getCookie(storage.getItem(cookieName) || "{}")
+                  );
+              if (data === null && !sessionTokenChanged) {
                 // Preserve non-session cookies (e.g. two_factor) when
                 // get-session returns null during 2FA pending state.
                 // Previously this unconditionally set cookieName to "{}",
