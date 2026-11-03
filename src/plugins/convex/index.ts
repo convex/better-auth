@@ -258,11 +258,25 @@ export const convex = (opts: {
   const latestConvexKey = async (ctx: Parameters<typeof createJwk>[0]) => {
     let [key] = await findConvexKeys(ctx);
     if (!key) {
-      await createJwk(ctx, jwt.options);
+      // jwtOptions, not jwt.options: the plugin's jwks adapter above can't
+      // create keys when a static JWKS is configured, and rotation always
+      // writes the new key to the database.
+      await createJwk(ctx, jwtOptions);
       [key] = await findConvexKeys(ctx);
     }
     // Set alg, otherwise Better Auth defaults the static key to EdDSA
     return [{ ...key, alg }];
+  };
+  // getSession stores the session it found in ctx.context.session before
+  // checking its expiry, and answers null for an expired one, so an after
+  // hook must check the expiry itself before treating it as established.
+  const liveSession = (ctx: {
+    context: { session?: { session: Session; user: User } | null };
+  }) => {
+    const session = ctx.context.session;
+    return session && new Date(session.session.expiresAt).getTime() > Date.now()
+      ? session
+      : null;
   };
   const signConvexJwt = async (
     ctx: Parameters<typeof signJWT>[0],
@@ -377,15 +391,16 @@ export const convex = (opts: {
           matcher: (ctx) => {
             return Boolean(
               ctx.path?.startsWith("/update-session") ||
-                (ctx.path?.startsWith("/get-session") && ctx.context.session)
+                (ctx.path?.startsWith("/get-session") && liveSession(ctx))
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
-            if (!ctx.context.session) {
+            const session = liveSession(ctx);
+            if (!session) {
               return;
             }
             try {
-              const token = await signConvexJwt(ctx, ctx.context.session);
+              const token = await signConvexJwt(ctx, session);
               const jwtCookie = ctx.context.createAuthCookie(JWT_COOKIE_NAME, {
                 maxAge: jwtExpirationSeconds,
               });
@@ -427,7 +442,7 @@ export const convex = (opts: {
                 ctx.path?.startsWith("/siwe/verify") ||
                 ctx.path?.startsWith("/sign-out") ||
                 ctx.path?.startsWith("/delete-user") ||
-                (ctx.path?.startsWith("/get-session") && !ctx.context.session)
+                (ctx.path?.startsWith("/get-session") && !liveSession(ctx))
             );
           },
           handler: createAuthMiddleware(async (ctx) => {

@@ -19,8 +19,8 @@
   naming the index it needs, instead of returning rows in creation order
 - fix: the origin `registerRoutes` sets (0.12.7) also rejects a forwarded host
   that carries a path, query or userinfo, and the Next.js and TanStack Start
-  proxy handlers drop incoming `x-forwarded-host` / `x-forwarded-proto`.
-  Dynamic `baseURL` configs resolve on Better Auth 1.7 without
+  proxy handlers drop incoming `x-forwarded-host` / `x-forwarded-proto`. Dynamic
+  `baseURL` configs resolve on Better Auth 1.7 without
   `advanced.trustedProxyHeaders`
 - fix: `AuthClient` type is structural so real auth clients are assignable again
 - breaking: acting as an OpenID provider (`oidcProvider`) is no longer
@@ -57,12 +57,14 @@
   `Set-Cookie`, `Better-Auth-Cookie`, `Set-Better-Auth-Cookie`,
   `Set-Auth-Token`, `Set-Auth-JWT`, `X-Api-Key`) and the query string of
   `Location` and `Referer`; the CORS router's own header logging is off
-- fix: the cross-domain client no longer clears a session stored while an
-  empty `get-session` answer was in flight, e.g. right after a one-time token
-  was redeemed on page load
+- fix: the cross-domain client no longer clears a session stored while an empty
+  `get-session` answer was in flight, e.g. right after a one-time token was
+  redeemed on page load
 - docs: the Next.js example's public `getUserById` query, which returned any
   user to anyone, is removed; the `getAnyUserById` and Local Install snippets
   check the caller
+- fix: no Convex JWT is issued on `get-session` for an expired session, and
+  `rotateKeys` and `getLatestJwks` work with a static JWKS again
 - fix: the Convex plugin turns `session.cookieCache` off and logs a warning when
   it's enabled. The cookie cache isn't supported with Convex (#18, #73, #434),
   and on Better Auth 1.7 an enabled cache made every `getSession` fall back to

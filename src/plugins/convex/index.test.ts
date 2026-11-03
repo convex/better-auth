@@ -6,6 +6,8 @@ const authConfig = {
   providers: [{ applicationID: "convex", domain: "https://example.com" }],
 } satisfies AuthConfig;
 
+const FUTURE = new Date(Date.now() + 60_000);
+
 const getJwtSetCookieMatcher = () => {
   const plugin = convex({ authConfig });
   const afterHooks = plugin.hooks?.after ?? [];
@@ -13,7 +15,7 @@ const getJwtSetCookieMatcher = () => {
     return (
       hook.matcher({
         path: "/update-session",
-        context: { session: { id: "s1" } },
+        context: { session: { session: { id: "s1", expiresAt: FUTURE } } },
       } as unknown as Parameters<typeof hook.matcher>[0]) &&
       !hook.matcher({
         path: "/sign-out",
@@ -33,7 +35,7 @@ describe("convex plugin JWT cookie refresh matcher", () => {
     type MatcherContext = Parameters<typeof matcher>[0];
     const ctx = {
       path: "/update-session",
-      context: { session: { id: "s1" } },
+      context: { session: { session: { id: "s1", expiresAt: FUTURE } } },
     };
     expect(matcher(ctx as unknown as MatcherContext)).toBe(true);
   });
@@ -43,7 +45,7 @@ describe("convex plugin JWT cookie refresh matcher", () => {
     type MatcherContext = Parameters<typeof matcher>[0];
     const withSessionCtx = {
       path: "/get-session",
-      context: { session: { id: "s1" } },
+      context: { session: { session: { id: "s1", expiresAt: FUTURE } } },
     };
     const withoutSessionCtx = {
       path: "/get-session",
@@ -108,7 +110,7 @@ describe("convex plugin JWT cookie expire matcher", () => {
       const switched = {
         path,
         context: {
-          session: { session: { id: "s1" } },
+          session: { session: { id: "s1", expiresAt: FUTURE } },
           newSession: { session: { id: "s2" } },
         },
       };
@@ -129,7 +131,7 @@ describe("convex plugin JWT cookie expire matcher", () => {
       const ctx = {
         path,
         context: {
-          session: { session: { id: "s1" } },
+          session: { session: { id: "s1", expiresAt: FUTURE } },
           newSession: { session: { id: "s1" } },
         },
       };
@@ -140,7 +142,7 @@ describe("convex plugin JWT cookie expire matcher", () => {
       const ctx = {
         path,
         context: {
-          session: { session: { id: "s1" } },
+          session: { session: { id: "s1", expiresAt: FUTURE } },
           newSession: { session: { id: "s1" } },
         },
       };
@@ -154,7 +156,10 @@ describe("convex plugin JWT cookie expire matcher", () => {
     type MatcherContext = Parameters<typeof matcher>[0];
     const ctx = {
       path: "/multi-session/list-device-sessions",
-      context: { session: { session: { id: "s1" } }, newSession: null },
+      context: {
+        session: { session: { id: "s1", expiresAt: FUTURE } },
+        newSession: null,
+      },
     };
     expect(matcher(ctx as unknown as MatcherContext)).toBe(false);
   });
