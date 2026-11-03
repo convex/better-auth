@@ -18,7 +18,7 @@ const resolveCdTarget = (
 export const indexFields = {
   account: ["accountId", ["accountId", "providerId"], ["providerId", "userId"]],
   rateLimit: ["key"],
-  session: ["expiresAt", ["expiresAt", "userId"]],
+  session: ["expiresAt", ["expiresAt", "userId"], ["token", "expiresAt"]],
   verification: ["expiresAt", "identifier"],
   user: [["email", "name"], "name", "userId"],
   oauthConsent: [["clientId", "userId"]],
@@ -167,8 +167,8 @@ export const tables = {
       mergedIndexFields(tables)[
         tableKey as keyof typeof mergedIndexFields
       ]?.map((index) => {
-        const indexArray = Array.isArray(index) ? index.sort() : [index];
-        const indexName = indexArray.join("_");
+        const indexArray = Array.isArray(index) ? index : [index];
+        const indexName = [...indexArray].sort().join("_");
         return `.index("${indexName}", ${JSON.stringify(indexArray)})`;
       }) || [];
 
