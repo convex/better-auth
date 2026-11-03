@@ -728,6 +728,205 @@ export const convexCustomTestSuite = createTestSuite(
       ).toEqual(nonNullRangeAccount);
     },
 
+    "should match unset optional fields against eq null": async () => {
+      const now = Date.now();
+      // Convex omits optional fields that were never written, while every
+      // other first-party adapter matches them against `eq null` (SQL `IS
+      // NULL`, Mongo `{ field: null }`). @better-auth/oauth-provider relies on
+      // it: refresh tokens are created with no `revoked` key, then rotated
+      // with an `eq null` compare-and-swap.
+      const unsetAccountId = `eq-null-${now}-unset`;
+      const explicitNullAccountId = `eq-null-${now}-explicit-null`;
+      const nonNullAccountId = `eq-null-${now}-non-null`;
+
+      // created with no accessTokenExpiresAt key at all
+      const unsetAccount = await adapter.create({
+        model: "account",
+        data: {
+          accountId: unsetAccountId,
+          providerId: "eq-null-provider",
+          userId: `eq-null-user-${now}`,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      const explicitNullAccount = await adapter.create({
+        model: "account",
+        data: {
+          accountId: explicitNullAccountId,
+          providerId: "eq-null-provider",
+          userId: `eq-null-user-${now}`,
+          accessTokenExpiresAt: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      await adapter.create({
+        model: "account",
+        data: {
+          accountId: nonNullAccountId,
+          providerId: "eq-null-provider",
+          userId: `eq-null-user-${now}`,
+          accessTokenExpiresAt: now + 1_000,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      expect(
+        await adapter.findOne({
+          model: "account",
+          where: [
+            {
+              field: "accessTokenExpiresAt",
+              operator: "eq",
+              connector: "AND",
+              value: null,
+            },
+            {
+              field: "accountId",
+              operator: "eq",
+              connector: "AND",
+              value: unsetAccountId,
+            },
+          ],
+        }),
+      ).toEqual(unsetAccount);
+
+      // the shape core's incrementOne fallback issues for the compare-and-swap
+      expect(
+        await adapter.findMany({
+          model: "account",
+          where: [
+            {
+              field: "id",
+              operator: "eq",
+              connector: "AND",
+              value: unsetAccount.id,
+            },
+            {
+              field: "accessTokenExpiresAt",
+              operator: "eq",
+              connector: "AND",
+              value: null,
+            },
+          ],
+          limit: 1,
+        }),
+      ).toEqual([unsetAccount]);
+
+      expect(
+        await adapter.findOne({
+          model: "account",
+          where: [
+            {
+              field: "accessTokenExpiresAt",
+              operator: "eq",
+              connector: "AND",
+              value: null,
+            },
+            {
+              field: "accountId",
+              operator: "eq",
+              connector: "AND",
+              value: explicitNullAccountId,
+            },
+          ],
+        }),
+      ).toEqual(explicitNullAccount);
+
+      expect(
+        await adapter.findOne({
+          model: "account",
+          where: [
+            {
+              field: "accessTokenExpiresAt",
+              operator: "eq",
+              connector: "AND",
+              value: null,
+            },
+            {
+              field: "accountId",
+              operator: "eq",
+              connector: "AND",
+              value: nonNullAccountId,
+            },
+          ],
+        }),
+      ).toEqual(null);
+    },
+
+    "should not match unset optional fields against ne null": async () => {
+      const now = Date.now();
+      const unsetAccountId = `ne-null-${now}-unset`;
+      const nonNullAccountId = `ne-null-${now}-non-null`;
+
+      await adapter.create({
+        model: "account",
+        data: {
+          accountId: unsetAccountId,
+          providerId: "ne-null-provider",
+          userId: `ne-null-user-${now}`,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      const nonNullAccount = await adapter.create({
+        model: "account",
+        data: {
+          accountId: nonNullAccountId,
+          providerId: "ne-null-provider",
+          userId: `ne-null-user-${now}`,
+          accessTokenExpiresAt: now + 1_000,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      expect(
+        await adapter.findOne({
+          model: "account",
+          where: [
+            {
+              field: "accessTokenExpiresAt",
+              operator: "ne",
+              connector: "AND",
+              value: null,
+            },
+            {
+              field: "accountId",
+              operator: "eq",
+              connector: "AND",
+              value: unsetAccountId,
+            },
+          ],
+        }),
+      ).toEqual(null);
+
+      expect(
+        await adapter.findOne({
+          model: "account",
+          where: [
+            {
+              field: "accessTokenExpiresAt",
+              operator: "ne",
+              connector: "AND",
+              value: null,
+            },
+            {
+              field: "accountId",
+              operator: "eq",
+              connector: "AND",
+              value: nonNullAccountId,
+            },
+          ],
+        }),
+      ).toEqual(nonNullAccount);
+    },
+
     "should fail to create a record with a unique field that already exists":
       async () => {
         await adapter.create({
