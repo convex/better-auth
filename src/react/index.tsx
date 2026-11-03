@@ -1,5 +1,12 @@
 import type { PropsWithChildren, ReactNode } from "react";
-import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Component,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { AuthTokenFetcher } from "convex/browser";
 import {
   Authenticated,
@@ -10,6 +17,7 @@ import {
 import type { FunctionReference } from "convex/server";
 import type { BetterAuthClientPlugin } from "better-auth";
 import type { createAuthClient } from "better-auth/react";
+import { decodeJwt } from "jose";
 import type {
   convexClient,
   crossDomainClient,
@@ -101,73 +109,196 @@ export function ConvexBetterAuthProvider({
 
 let initialTokenUsed = false;
 
+function getTokenSessionId(token: string): string | null {
+  try {
+    // Convex still verifies the token. Decoding here only determines whether
+    // the cached SSR token belongs to the session that hydrated in the browser.
+    const sessionId = decodeJwt(token).sessionId;
+    return typeof sessionId === "string" && sessionId ? sessionId : null;
+  } catch {
+    return null;
+  }
+}
+
 function useUseAuthFromBetterAuth(
   authClient: AuthClient,
   initialToken?: string | null
 ) {
-  const [cachedToken, setCachedToken] = useState<string | null>(
-    initialTokenUsed ? null : (initialToken ?? null)
-  );
-  const pendingTokenRef = useRef<Promise<string | null> | null>(null);
-  useEffect(() => {
-    if (!initialTokenUsed) {
-      initialTokenUsed = true;
-    }
-  }, []);
-
   return useMemo(
     () =>
       function useAuthFromBetterAuth() {
         const { data: session, isPending: isSessionPending } =
           authClient.useSession();
         const sessionId = session?.session?.id;
+        const [cachedToken, setCachedToken] = useState<string | null>(
+          initialTokenUsed ? null : (initialToken ?? null)
+        );
+        const cachedTokenRef = useRef(cachedToken);
+        // undefined means there is no SSR token awaiting hydration. null means
+        // the token could not be decoded and must not be preserved.
+        const initialTokenSessionIdRef = useRef<string | null | undefined>(
+          cachedToken ? getTokenSessionId(cachedToken) : undefined
+        );
+        const tokenGenerationRef = useRef(0);
+        const pendingTokenRef = useRef<{
+          generation: number;
+          requestId: symbol;
+          promise: Promise<string | null>;
+        } | null>(null);
+        const previousSessionIdRef = useRef(sessionId);
+        const [fetcherVersion, setFetcherVersion] = useState(0);
+        // A failed refresh leaves Convex signed out until fetchAccessToken
+        // changes identity, so the fetcher is replaced once per failure streak.
+        const hasRetriedFailedTokenRef = useRef(false);
+        const isUnmountedRef = useRef(false);
+        const isInitialTokenSessionMismatch =
+          initialTokenSessionIdRef.current !== undefined &&
+          sessionId !== undefined &&
+          initialTokenSessionIdRef.current !== sessionId;
+        const isSessionReplacement =
+          isInitialTokenSessionMismatch ||
+          (previousSessionIdRef.current !== undefined &&
+            previousSessionIdRef.current !== sessionId);
+
+        const cacheToken = useCallback((token: string | null) => {
+          initialTokenSessionIdRef.current = undefined;
+          cachedTokenRef.current = token;
+          setCachedToken(token);
+        }, []);
+
+        const invalidatePendingToken = useCallback(() => {
+          tokenGenerationRef.current += 1;
+          pendingTokenRef.current = null;
+        }, []);
+
         useEffect(() => {
-          if (!session && !isSessionPending && cachedToken) {
-            setCachedToken(null);
+          if (!initialTokenUsed) {
+            initialTokenUsed = true;
           }
-        }, [session, isSessionPending]);
+        }, []);
+
+        useEffect(() => {
+          isUnmountedRef.current = false;
+          return () => {
+            // Convex's clearAuth() does not cancel an in-flight setAuth, so a
+            // token resolved after unmount must not authenticate the client.
+            isUnmountedRef.current = true;
+            invalidatePendingToken();
+          };
+        }, [invalidatePendingToken]);
+
+        useEffect(() => {
+          const previousSessionId = previousSessionIdRef.current;
+          if (
+            isInitialTokenSessionMismatch ||
+            (previousSessionId && previousSessionId !== sessionId)
+          ) {
+            invalidatePendingToken();
+            cacheToken(null);
+            hasRetriedFailedTokenRef.current = false;
+            if (sessionId) {
+              setFetcherVersion((version) => version + 1);
+            }
+          }
+          previousSessionIdRef.current = sessionId;
+        }, [
+          cacheToken,
+          invalidatePendingToken,
+          isInitialTokenSessionMismatch,
+          sessionId,
+        ]);
+
+        useEffect(() => {
+          if (
+            !session &&
+            !isSessionPending &&
+            (cachedTokenRef.current || pendingTokenRef.current)
+          ) {
+            invalidatePendingToken();
+            cacheToken(null);
+          }
+        }, [cacheToken, invalidatePendingToken, session, isSessionPending]);
+
         const fetchAccessToken = useCallback(
           async ({
             forceRefreshToken = false,
           }: { forceRefreshToken?: boolean } = {}) => {
-            if (cachedToken && !forceRefreshToken) {
-              return cachedToken;
+            if (isSessionReplacement) {
+              return null;
             }
-            if (!forceRefreshToken && pendingTokenRef.current) {
-              return pendingTokenRef.current;
+            if (cachedTokenRef.current && !forceRefreshToken) {
+              return cachedTokenRef.current;
             }
-            pendingTokenRef.current = authClient.convex
+            const pendingToken = pendingTokenRef.current;
+            if (
+              !forceRefreshToken &&
+              pendingToken?.generation === tokenGenerationRef.current
+            ) {
+              return pendingToken.promise;
+            }
+            const requestGeneration = tokenGenerationRef.current;
+            const requestId = Symbol();
+            const isCurrentRequest = () =>
+              !isUnmountedRef.current &&
+              tokenGenerationRef.current === requestGeneration &&
+              pendingTokenRef.current?.requestId === requestId;
+            const reportTokenResult = (token: string | null) => {
+              cacheToken(token);
+              if (token) {
+                hasRetriedFailedTokenRef.current = false;
+              } else if (!hasRetriedFailedTokenRef.current) {
+                hasRetriedFailedTokenRef.current = true;
+                setFetcherVersion((version) => version + 1);
+              }
+              return token;
+            };
+            const tokenRequest = authClient.convex
               .token({ fetchOptions: { throw: false } })
-              .then(({ data }) => {
-                const token = data?.token || null;
-                setCachedToken(token);
-                return token;
-              })
-              .catch(() => {
-                setCachedToken(null);
-                return null;
-              })
+              .then(({ data }) =>
+                isCurrentRequest()
+                  ? reportTokenResult(data?.token || null)
+                  : null
+              )
+              .catch(() =>
+                isCurrentRequest() ? reportTokenResult(null) : null
+              )
               .finally(() => {
-                pendingTokenRef.current = null;
+                if (pendingTokenRef.current?.requestId === requestId) {
+                  pendingTokenRef.current = null;
+                }
               });
-            return pendingTokenRef.current;
+            pendingTokenRef.current = {
+              generation: requestGeneration,
+              requestId,
+              promise: tokenRequest,
+            };
+            return tokenRequest;
           },
-          // Build a new fetchAccessToken to trigger setAuth() whenever the
-          // session changes.
+          // authClient changes replace this hook factory, and fetcherVersion intentionally
+          // rebuilds the callback so Convex reauthenticates for a different session
+          // or after a failed token request.
           // eslint-disable-next-line react-hooks/exhaustive-deps
-          [sessionId]
+          [authClient, cacheToken, isSessionReplacement, fetcherVersion]
         );
         return useMemo(
           () => ({
-            isLoading: isSessionPending && !cachedToken,
-            isAuthenticated: Boolean(session?.session) || cachedToken !== null,
+            isLoading:
+              isSessionReplacement || (isSessionPending && !cachedToken),
+            isAuthenticated:
+              !isSessionReplacement &&
+              (Boolean(session?.session) || cachedToken !== null),
             fetchAccessToken,
           }),
-          // eslint-disable-next-line react-hooks/exhaustive-deps
-          [isSessionPending, sessionId, fetchAccessToken, cachedToken]
+          [
+            isSessionPending,
+            isSessionReplacement,
+            session,
+            fetchAccessToken,
+            cachedToken,
+          ]
         );
       },
-    [authClient]
+    [authClient, initialToken]
   );
 }
 
