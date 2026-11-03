@@ -57,10 +57,10 @@ export const changePassword = mutation({
 
 ## `getAnyUserById()`
 
-Returns a user by their Better Auth user id. `getAnyUserById()` doesn't check
-who is calling, and the user document includes fields such as the email address.
-Anyone can call a public query, so check the caller in your query and return
-only the fields the caller needs.
+Returns a user by their Better Auth user id. It doesn't check who is calling,
+and the user document includes fields such as the email address. Anyone can call
+a public query, so check the caller in your query and return only the fields the
+caller needs.
 
 ```ts
 import { query } from "./_generated/server";

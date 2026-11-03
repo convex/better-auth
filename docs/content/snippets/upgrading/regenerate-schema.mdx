@@ -8,8 +8,8 @@ Auth 1.7 adds fields that Convex can write only after the schema declares them:
 `jwks`, and, for the organization plugin, `memberCount` on `team` and
 `membershipKey` on `teamMember`. Better Auth 1.7 also adds an
 `accountId_providerId_userId` index on `account`, which Better Auth reads when a
-user sets, changes or resets a password. Without the index, each of those
-password operations scans the whole `account` table.
+user sets, changes or resets a password. Without it, each of those operations
+scans the whole table.
 
 Run the Better Auth CLI as `npx auth generate`, which replaces the older
 `npx @better-auth/cli generate` command.
@@ -19,9 +19,8 @@ cd convex/betterAuth
 npx auth generate
 ```
 
-If your options include the `oidcProvider` plugin, remove `oidcProvider` before
-you generate the schema, because Better Auth 1.7 no longer has the
-`oidcProvider` plugin.
+If your options include the `oidcProvider` plugin, remove it before you generate
+the schema, because Better Auth 1.7 no longer has it.
 
 If you use the organization plugin with teams and already have teams, Convex
 rejects the deploy, because the generated schema requires `team.memberCount` and
@@ -37,9 +36,9 @@ team: defineTable({
 });
 ```
 
-Then set `memberCount` on each team from the team's existing members. This
-mutation updates 100 teams per transaction and schedules itself for the next
-batch, so it works for any number of teams:
+Then set `memberCount` on each team from its existing members. This mutation
+updates 100 teams per transaction and schedules itself for the next batch, so it
+works for any number of teams:
 
 ```ts title="convex/betterAuth/migrations.ts"
 import { v } from "convex/values";
@@ -83,6 +82,6 @@ thousands of members each, lower `numItems` to stay within Convex's
 [transaction limits](https://docs.convex.dev/production/state/limits#transactions).
 Until the backfill finishes, if a team member limit is set, teams without
 `memberCount` reject new members. When every team has `memberCount`, regenerate
-the schema so that `memberCount` is required again, and deploy.
+the schema so it is required again, and deploy.
 
 </div>

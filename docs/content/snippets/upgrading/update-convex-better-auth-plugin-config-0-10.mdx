@@ -7,8 +7,8 @@ Pass your auth config object to the `convex()` plugin, which now requires it.
 With `customJwt` auth config, the plugin signs tokens with RS256 instead of
 EdDSA, so existing signing keys don't match. Set
 `jwksRotateOnTokenGenerationError` to `true` so the plugin rotates the keys when
-token generation fails on the algorithm mismatch. You can remove
-`jwksRotateOnTokenGenerationError` after the keys have rotated.
+token generation fails on the algorithm mismatch. You can remove it after the
+keys have rotated.
 
 ```ts title="convex/auth.ts"
 import authConfig from "./auth.config";

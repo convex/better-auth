@@ -3,8 +3,8 @@
 ### Remove `generateId: "uuid"`
 
 If your Better Auth options set `advanced.database.generateId` to `"uuid"`,
-remove the option. Convex assigns document ids, so `generateId` never had an
-effect. On Better Auth 1.7, `"uuid"` also turns off enforcement of verification
+remove it. Convex assigns document ids, so `generateId` never had an effect. On
+Better Auth 1.7, `"uuid"` also turns off enforcement of verification
 reservations, the single-use locks Better Auth takes on verification values.
 While `generateId` is `"uuid"`, the Convex plugin logs a warning.
 
