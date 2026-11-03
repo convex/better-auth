@@ -119,7 +119,7 @@ describe("convex plugin next to the jwt plugin, on the Convex adapter", () => {
     expect((await get("/jwks")).status).toBe(200);
     const [legacy] = await jwksRows();
     await t.run(async (ctx) => {
-      await ctx.db.patch(legacy._id, { alg: null });
+      await ctx.db.patch("jwks", legacy._id, { alg: null });
     });
     const res = await get("/convex/token");
     expect(res.status, await res.clone().text()).toBe(200);
