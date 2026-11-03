@@ -34,7 +34,7 @@ export function Dashboard() {
             />
           ) : (
             <div className="w-10 h-10 rounded-full bg-orange-100 dark:bg-orange-900 flex items-center justify-center text-orange-600 dark:text-orange-200 font-medium">
-              {user.name[0].toUpperCase()}
+              {(user.name || user.email)[0].toUpperCase()}
             </div>
           )}
           <div>

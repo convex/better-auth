@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Check, Trash2, X } from "lucide-react";
 import { Doc, Id } from "@/convex/_generated/dataModel";
+import { isPlaceholder } from "./mutations";
 
 export const TodoItem = ({
   todo,
@@ -22,6 +23,7 @@ export const TodoItem = ({
         variant="ghost"
         size="icon"
         className="text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 cursor-pointer"
+        disabled={isPlaceholder(todo._id)}
         onClick={() => onToggleCompleted({ id: todo._id })}
       >
         {todo.completed ? (
@@ -43,6 +45,7 @@ export const TodoItem = ({
       <Button
         variant="ghost"
         size="icon"
+        disabled={isPlaceholder(todo._id)}
         onClick={() => onRemove({ id: todo._id })}
         className="text-neutral-500 hover:text-red-400 hover:bg-neutral-800 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
       >

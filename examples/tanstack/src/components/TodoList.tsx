@@ -9,6 +9,10 @@ import { Id } from '~/convex/_generated/dataModel'
 import { useForm } from '@tanstack/react-form'
 import { useSuspenseQuery } from '@tanstack/react-query'
 
+// Optimistic todos get a placeholder id until the server assigns a real one.
+// Buttons on a placeholder are disabled, since the server can't act on it.
+const isPlaceholder = (id: string) => id.startsWith('optimistic:')
+
 // Mutations w/ optimistic updates
 const useCreateTodo = () =>
   useMutation(api.todos.create).withOptimisticUpdate((localStore, args) => {
@@ -22,7 +26,7 @@ const useCreateTodo = () =>
     }
     localStore.setQuery(api.todos.get, {}, [
       {
-        _id: crypto.randomUUID() as Id<'todos'>,
+        _id: `optimistic:${crypto.randomUUID()}` as Id<'todos'>,
         _creationTime: Date.now(),
         text: args.text,
         completed: false,
@@ -121,6 +125,7 @@ export const TodoList = () => {
                 variant="ghost"
                 size="icon"
                 className="text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800"
+                disabled={isPlaceholder(todo._id)}
                 onClick={() => toggle({ id: todo._id })}
               >
                 {todo.completed ? (
@@ -141,6 +146,7 @@ export const TodoList = () => {
               <Button
                 variant="ghost"
                 size="icon"
+                disabled={isPlaceholder(todo._id)}
                 onClick={() => remove({ id: todo._id })}
                 className="text-neutral-500 hover:text-red-400 hover:bg-neutral-800 opacity-0 group-hover:opacity-100 transition-opacity"
               >

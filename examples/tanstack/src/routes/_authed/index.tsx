@@ -1,6 +1,5 @@
 import { TodoList } from '@/components/TodoList'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { Toaster } from 'sonner'
 import { UserProfile } from '@/components/UserProfile'
 import { SignOutButton } from '@/components/client'
 import { api } from '~/convex/_generated/api'
@@ -53,7 +52,6 @@ function App() {
         </div>
       </header>
       <TodoList />
-      <Toaster />
     </div>
   )
 }

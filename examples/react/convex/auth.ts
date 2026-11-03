@@ -97,10 +97,12 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
 export const createAuth = (ctx: GenericCtx<DataModel>) =>
   betterAuth(createAuthOptions(ctx));
 
-// Example function for getting the current user
+// Example function for getting the current user. Returns null rather than
+// throwing: the query stays subscribed for a moment after sign-out or
+// account deletion, and a thrown error there would unmount the app.
 export const getCurrentUser = query({
   args: {},
   handler: async (ctx) => {
-    return await authComponent.getAuthUser(ctx);
+    return (await authComponent.safeGetAuthUser(ctx)) ?? null;
   },
 });
