@@ -32,15 +32,24 @@ team: defineTable({
 });
 ```
 
-Then backfill it from the existing team members:
+Then backfill it from the existing team members. The mutation handles 100 teams
+per transaction and schedules itself for the next batch, so it stays within
+Convex's
+[transaction limits](https://docs.convex.dev/production/state/limits#transactions)
+however many teams there are:
 
 ```ts title="convex/betterAuth/migrations.ts"
+import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
 
 export const backfillTeamMemberCount = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    for await (const team of ctx.db.query("team")) {
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, args) => {
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("team")
+      .paginate({ numItems: 100, cursor: args.cursor ?? null });
+    for (const team of page) {
       if (team.memberCount !== undefined) {
         continue;
       }
@@ -50,6 +59,13 @@ export const backfillTeamMemberCount = internalMutation({
         .collect();
       await ctx.db.patch("team", team._id, { memberCount: members.length });
     }
+    if (!isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.migrations.backfillTeamMemberCount,
+        { cursor: continueCursor }
+      );
+    }
   },
 });
 ```
@@ -58,8 +74,10 @@ export const backfillTeamMemberCount = internalMutation({
 npx convex run --component betterAuth migrations:backfillTeamMemberCount
 ```
 
-Until it runs, teams without a `memberCount` reject new members when a team
-member limit is set. Once every team has one, regenerate the schema so the field
-is required again.
+The command returns after the first batch; the rest run in the background. Lower
+`numItems` if teams have thousands of members each. Until the backfill finishes,
+teams without a `memberCount` reject new members when a team member limit is
+set. Once every team has one, regenerate the schema so the field is required
+again.
 
 </div>

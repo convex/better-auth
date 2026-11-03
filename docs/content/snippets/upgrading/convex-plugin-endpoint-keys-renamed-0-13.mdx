@@ -8,7 +8,7 @@ added the `jwt` or `oauth-provider` plugin. They are now `getConvexToken`,
 `getConvexJwks` and `getConvexOpenIdConfig`. The HTTP paths (`/convex/token`,
 `/convex/jwks`, `/convex/.well-known/openid-configuration`) and
 `authClient.convex.token()` are unchanged. Only code that called
-`auth.api.getToken()` or `auth.api.getJwks()` on the server expecting the Convex
-endpoints needs to use the new names.
+`auth.api.getToken()`, `auth.api.getJwks()` or `auth.api.getOpenIdConfig()` on
+the server expecting the Convex endpoints needs to use the new names.
 
 </div>

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthConfig } from "convex/server";
 import { convex } from "./index.js";
 
@@ -78,36 +78,35 @@ describe("convex plugin JWT cookie refresh matcher", () => {
 });
 
 describe("convex plugin OpenID discovery document", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("serves issuer and jwks_uri for the Convex deployment", async () => {
     const { betterAuth } = await import("better-auth/minimal");
     const { memoryAdapter } = await import("better-auth/adapters/memory");
-    const previousSiteUrl = process.env.CONVEX_SITE_URL;
-    process.env.CONVEX_SITE_URL = "https://deployment.convex.site";
-    try {
-      const auth = betterAuth({
-        baseURL: "https://deployment.convex.site",
-        secret: "test-secret-at-least-thirty-two-characters-long",
-        database: memoryAdapter({}),
-        logger: { disabled: true },
-        plugins: [convex({ authConfig })],
-      });
-      const response = await auth.handler(
-        new Request(
-          "https://deployment.convex.site/api/auth/convex/.well-known/openid-configuration"
-        )
-      );
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as Record<string, unknown>;
-      expect(body.issuer).toBe("https://deployment.convex.site");
-      expect(body.jwks_uri).toBe(
-        "https://deployment.convex.site/api/auth/convex/jwks"
-      );
-      expect(body.id_token_signing_alg_values_supported).toEqual(["EdDSA"]);
-      expect(body.response_types_supported).toEqual(["code"]);
-      expect(body.subject_types_supported).toEqual(["public"]);
-    } finally {
-      process.env.CONVEX_SITE_URL = previousSiteUrl;
-    }
+    vi.stubEnv("CONVEX_SITE_URL", "https://deployment.convex.site");
+    const auth = betterAuth({
+      baseURL: "https://deployment.convex.site",
+      secret: "test-secret-at-least-thirty-two-characters-long",
+      database: memoryAdapter({}),
+      logger: { disabled: true },
+      plugins: [convex({ authConfig })],
+    });
+    const response = await auth.handler(
+      new Request(
+        "https://deployment.convex.site/api/auth/convex/.well-known/openid-configuration"
+      )
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body.issuer).toBe("https://deployment.convex.site");
+    expect(body.jwks_uri).toBe(
+      "https://deployment.convex.site/api/auth/convex/jwks"
+    );
+    expect(body.id_token_signing_alg_values_supported).toEqual(["EdDSA"]);
+    expect(body.response_types_supported).toEqual(["code"]);
+    expect(body.subject_types_supported).toEqual(["public"]);
   });
 
   it("uses endpoint keys that the jwt and oauth-provider plugins do not", () => {

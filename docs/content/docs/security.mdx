@@ -18,8 +18,8 @@ Fixes, including security fixes, ship in the latest version. See
 Versions 0.10 through 0.12 use Better Auth versions affected by
 [GHSA-965c-763c-88jm](https://github.com/advisories/GHSA-965c-763c-88jm), a
 critical issue for apps that use Magic Link together with social or Generic
-OAuth sign-in. It's fixed in Better Auth 1.7.7, which the latest version
-requires.
+OAuth sign-in. It's fixed in Better Auth 1.7.7. The latest version of the
+component requires Better Auth 1.7.14 or later.
 
 Workaround: set `storeToken: "hashed"` on the Magic Link plugin and leave the
 global `verification.storeIdentifier` unset or set to `"plain"`, or turn off

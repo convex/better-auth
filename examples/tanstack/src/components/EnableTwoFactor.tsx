@@ -54,6 +54,10 @@ export default function EnableTwoFactor({ onBack }: { onBack: () => void }) {
           setBackupCodes(data.backupCodes)
         }
         setStep('qr-verify')
+      } else {
+        // The client returns errors instead of throwing them, so a wrong
+        // password lands here rather than in the catch below.
+        alert('Failed to enable 2FA. Please check your password and try again.')
       }
     } catch {
       alert('Failed to enable 2FA. Please check your password and try again.')
