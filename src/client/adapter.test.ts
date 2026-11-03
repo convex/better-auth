@@ -27,12 +27,6 @@ import {
   renameModelUserTableTestSuite,
 } from "../test/adapter-factory/index.js";
 
-const MIN_NODE_MAJOR = 24;
-const currentNodeMajor = Number.parseInt(
-  process.versions.node.split(".")[0] ?? "0",
-  10
-);
-
 const NORMAL_DISABLED_TESTS = [
   // dynamic-schema-plugin-table/dynamic-schema-additional-fields:
   // Convex validators are static in this harness, so runtime schema mutation
@@ -108,214 +102,196 @@ type InternalWithTestProfiles = {
   testProfiles: Record<TestProfileName, AdapterModule>;
 };
 
-if (currentNodeMajor < MIN_NODE_MAJOR) {
-  // The upstream adapter suite cannot load on older Node versions
-  // (@better-auth/test-utils uses explicit resource management syntax), so
-  // this file fails loudly rather than skipping: a green run on an older
-  // Node must not be mistaken for the suite passing. The convex-test based
-  // suites in the other files still run on Node 22.
-  describe("Better Auth Adapter Tests", () => {
-    it(`requires Node ${MIN_NODE_MAJOR}+`, () => {
-      throw new Error(
-        `The upstream Better Auth adapter suite requires Node ${MIN_NODE_MAJOR}+ ` +
-          `(running ${process.versions.node}). Install Node ${MIN_NODE_MAJOR} ` +
-          `(see .nvmrc) to run it. This is a failure, not a skip, so a green ` +
-          `run on an older Node cannot be mistaken for the suite passing.`
+describe("Better Auth Adapter Tests", async () => {
+  const t = convexTest(schema, import.meta.glob("../component/**/*.*s"));
+
+  // Bridge `convexAdapter`'s ctx surface to `convexTest`. Each adapter call
+  // re-enters convex-test's AsyncLocalStorage frame via t.query / t.mutation,
+  // which is required by convex-test ≥0.0.45. State persists across calls
+  // because the test database lives on `t`, not in ALS.
+  const wrappedCtx = {
+    runQuery: t.query.bind(t),
+    runMutation: t.mutation.bind(t),
+  } as any;
+
+  const internalWithTestProfiles =
+    internal as unknown as InternalWithTestProfiles;
+  const profileApi = (name: TestProfileName): { adapter: AdapterModule } => ({
+    adapter: internalWithTestProfiles.testProfiles[name],
+  });
+
+  const baseProfileClient = createClient<DataModel>(
+    { adapter: internalWithTestProfiles.adapter },
+    { verbose: false }
+  );
+  const additionalFieldsProfileClient = createClient<DataModel>(
+    profileApi("adapterAdditionalFields"),
+    { verbose: false }
+  );
+  const pluginTableProfileClient = createClient<DataModel>(
+    profileApi("adapterPluginTable"),
+    { verbose: false }
+  );
+  const renameFieldProfileClient = createClient<DataModel>(
+    profileApi("adapterRenameField"),
+    { verbose: false }
+  );
+  const renameUserCustomProfileClient = createClient<DataModel>(
+    profileApi("adapterRenameUserCustom"),
+    { verbose: false }
+  );
+  const renameUserTableProfileClient = createClient<DataModel>(
+    profileApi("adapterRenameUserTable"),
+    { verbose: false }
+  );
+  const organizationJoinsProfileClient = createClient<DataModel>(
+    profileApi("adapterOrganizationJoins"),
+    { verbose: false }
+  );
+
+  const noMigrations = () => {
+    // Convex schema is static — no migrations needed.
+  };
+
+  const { execute: executeBaseProfile } = await testAdapter({
+    adapter: () => baseProfileClient.adapter(wrappedCtx),
+    runMigrations: noMigrations,
+    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
+    tests: [
+      coreNormalTestSuite({
+        disableTests: toDisableMap(NORMAL_DISABLED_TESTS),
+      }),
+      transactionsTestSuite({ disableTests: { ALL: true } }),
+      coreAuthFlowTestSuite(),
+      convexCustomTestSuite(),
+    ],
+  });
+
+  const { execute: executeAdditionalFieldsProfile } = await testAdapter({
+    adapter: () => additionalFieldsProfileClient.adapter(wrappedCtx),
+    runMigrations: noMigrations,
+    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
+    prefixTests: "profile:additional-fields",
+    tests: [
+      additionalFieldsNormalTestSuite(),
+      additionalFieldsAuthFlowTestSuite(),
+    ],
+  });
+
+  const { execute: executePluginTableProfile } = await testAdapter({
+    adapter: () => pluginTableProfileClient.adapter(wrappedCtx),
+    runMigrations: noMigrations,
+    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
+    prefixTests: "profile:plugin-table",
+    tests: [pluginTableNormalTestSuite()],
+  });
+
+  const { execute: executeRenameFieldProfile } = await testAdapter({
+    adapter: () => renameFieldProfileClient.adapter(wrappedCtx),
+    runMigrations: noMigrations,
+    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
+    prefixTests: "profile:rename-field-join",
+    tests: [renameFieldAndJoinTestSuite()],
+  });
+
+  const { execute: executeRenameUserCustomProfile } = await testAdapter({
+    adapter: () => renameUserCustomProfileClient.adapter(wrappedCtx),
+    runMigrations: noMigrations,
+    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
+    prefixTests: "profile:rename-user-custom",
+    tests: [renameModelUserCustomTestSuite()],
+  });
+
+  const { execute: executeRenameUserTableProfile } = await testAdapter({
+    adapter: () => renameUserTableProfileClient.adapter(wrappedCtx),
+    runMigrations: noMigrations,
+    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
+    prefixTests: "profile:rename-user-table",
+    tests: [renameModelUserTableTestSuite()],
+  });
+
+  const { execute: executeOrganizationJoinsProfile } = await testAdapter({
+    adapter: () => organizationJoinsProfileClient.adapter(wrappedCtx),
+    runMigrations: noMigrations,
+    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
+    prefixTests: "profile:organization-joins",
+    tests: [multiJoinsMissingRowsTestSuite()],
+  });
+
+  executeBaseProfile();
+  executeAdditionalFieldsProfile();
+  executePluginTableProfile();
+  executeRenameFieldProfile();
+  executeRenameUserCustomProfile();
+  executeRenameUserTableProfile();
+  executeOrganizationJoinsProfile();
+
+  // The suites above use generateId: "uuid", which drops the deterministic
+  // ids Better Auth uses to reserve verification values.
+  describe("with default ids", () => {
+    const createAuth = (onMagicLink: (url: string) => void = () => {}) =>
+      betterAuth({
+        baseURL: "http://localhost:3000",
+        secret: "test-secret-at-least-thirty-two-characters-long",
+        database: baseProfileClient.adapter(wrappedCtx),
+        emailAndPassword: { enabled: true },
+        logger: { disabled: true },
+        plugins: [
+          magicLink({ sendMagicLink: async ({ url }) => onMagicLink(url) }),
+        ],
+      });
+
+    it("reserves a verification value only once", async () => {
+      const { internalAdapter } = await createAuth().$context;
+      const reservation = {
+        identifier: `reservation-${crypto.randomUUID()}`,
+        value: "value",
+        expiresAt: new Date(Date.now() + 60_000),
+      };
+      expect(await internalAdapter.reserveVerificationValue(reservation)).toBe(
+        true
+      );
+      expect(await internalAdapter.reserveVerificationValue(reservation)).toBe(
+        false
+      );
+      await internalAdapter.deleteVerificationByIdentifier(
+        reservation.identifier
+      );
+      expect(await internalAdapter.reserveVerificationValue(reservation)).toBe(
+        true
       );
     });
-  });
-} else {
-  describe("Better Auth Adapter Tests", async () => {
-    const t = convexTest(schema, import.meta.glob("../component/**/*.*s"));
 
-    // Bridge `convexAdapter`'s ctx surface to `convexTest`. Each adapter call
-    // re-enters convex-test's AsyncLocalStorage frame via t.query / t.mutation,
-    // which is required by convex-test ≥0.0.45. State persists across calls
-    // because the test database lives on `t`, not in ALS.
-    const wrappedCtx = {
-      runQuery: t.query.bind(t),
-      runMutation: t.mutation.bind(t),
-    } as any;
-
-    const internalWithTestProfiles =
-      internal as unknown as InternalWithTestProfiles;
-    const profileApi = (name: TestProfileName): { adapter: AdapterModule } => ({
-      adapter: internalWithTestProfiles.testProfiles[name],
-    });
-
-    const baseProfileClient = createClient<DataModel>(
-      { adapter: internalWithTestProfiles.adapter },
-      { verbose: false }
-    );
-    const additionalFieldsProfileClient = createClient<DataModel>(
-      profileApi("adapterAdditionalFields"),
-      { verbose: false }
-    );
-    const pluginTableProfileClient = createClient<DataModel>(
-      profileApi("adapterPluginTable"),
-      { verbose: false }
-    );
-    const renameFieldProfileClient = createClient<DataModel>(
-      profileApi("adapterRenameField"),
-      { verbose: false }
-    );
-    const renameUserCustomProfileClient = createClient<DataModel>(
-      profileApi("adapterRenameUserCustom"),
-      { verbose: false }
-    );
-    const renameUserTableProfileClient = createClient<DataModel>(
-      profileApi("adapterRenameUserTable"),
-      { verbose: false }
-    );
-    const organizationJoinsProfileClient = createClient<DataModel>(
-      profileApi("adapterOrganizationJoins"),
-      { verbose: false }
-    );
-
-    const noMigrations = () => {
-      // Convex schema is static — no migrations needed.
-    };
-
-    const { execute: executeBaseProfile } = await testAdapter({
-      adapter: () => baseProfileClient.adapter(wrappedCtx),
-      runMigrations: noMigrations,
-      overrideBetterAuthOptions: getOverrideBetterAuthOptions,
-      tests: [
-        coreNormalTestSuite({
-          disableTests: toDisableMap(NORMAL_DISABLED_TESTS),
-        }),
-        transactionsTestSuite({ disableTests: { ALL: true } }),
-        coreAuthFlowTestSuite(),
-        convexCustomTestSuite(),
-      ],
-    });
-
-    const { execute: executeAdditionalFieldsProfile } = await testAdapter({
-      adapter: () => additionalFieldsProfileClient.adapter(wrappedCtx),
-      runMigrations: noMigrations,
-      overrideBetterAuthOptions: getOverrideBetterAuthOptions,
-      prefixTests: "profile:additional-fields",
-      tests: [
-        additionalFieldsNormalTestSuite(),
-        additionalFieldsAuthFlowTestSuite(),
-      ],
-    });
-
-    const { execute: executePluginTableProfile } = await testAdapter({
-      adapter: () => pluginTableProfileClient.adapter(wrappedCtx),
-      runMigrations: noMigrations,
-      overrideBetterAuthOptions: getOverrideBetterAuthOptions,
-      prefixTests: "profile:plugin-table",
-      tests: [pluginTableNormalTestSuite()],
-    });
-
-    const { execute: executeRenameFieldProfile } = await testAdapter({
-      adapter: () => renameFieldProfileClient.adapter(wrappedCtx),
-      runMigrations: noMigrations,
-      overrideBetterAuthOptions: getOverrideBetterAuthOptions,
-      prefixTests: "profile:rename-field-join",
-      tests: [renameFieldAndJoinTestSuite()],
-    });
-
-    const { execute: executeRenameUserCustomProfile } = await testAdapter({
-      adapter: () => renameUserCustomProfileClient.adapter(wrappedCtx),
-      runMigrations: noMigrations,
-      overrideBetterAuthOptions: getOverrideBetterAuthOptions,
-      prefixTests: "profile:rename-user-custom",
-      tests: [renameModelUserCustomTestSuite()],
-    });
-
-    const { execute: executeRenameUserTableProfile } = await testAdapter({
-      adapter: () => renameUserTableProfileClient.adapter(wrappedCtx),
-      runMigrations: noMigrations,
-      overrideBetterAuthOptions: getOverrideBetterAuthOptions,
-      prefixTests: "profile:rename-user-table",
-      tests: [renameModelUserTableTestSuite()],
-    });
-
-    const { execute: executeOrganizationJoinsProfile } = await testAdapter({
-      adapter: () => organizationJoinsProfileClient.adapter(wrappedCtx),
-      runMigrations: noMigrations,
-      overrideBetterAuthOptions: getOverrideBetterAuthOptions,
-      prefixTests: "profile:organization-joins",
-      tests: [multiJoinsMissingRowsTestSuite()],
-    });
-
-    executeBaseProfile();
-    executeAdditionalFieldsProfile();
-    executePluginTableProfile();
-    executeRenameFieldProfile();
-    executeRenameUserCustomProfile();
-    executeRenameUserTableProfile();
-    executeOrganizationJoinsProfile();
-
-    // The suites above use generateId: "uuid", which drops the deterministic
-    // ids Better Auth uses to reserve verification values.
-    describe("with default ids", () => {
-      const createAuth = (onMagicLink: (url: string) => void = () => {}) =>
-        betterAuth({
-          baseURL: "http://localhost:3000",
-          secret: "test-secret-at-least-thirty-two-characters-long",
-          database: baseProfileClient.adapter(wrappedCtx),
-          emailAndPassword: { enabled: true },
-          logger: { disabled: true },
-          plugins: [
-            magicLink({ sendMagicLink: async ({ url }) => onMagicLink(url) }),
-          ],
-        });
-
-      it("reserves a verification value only once", async () => {
-        const { internalAdapter } = await createAuth().$context;
-        const reservation = {
-          identifier: `reservation-${crypto.randomUUID()}`,
-          value: "value",
-          expiresAt: new Date(Date.now() + 60_000),
-        };
-        expect(await internalAdapter.reserveVerificationValue(reservation)).toBe(
-          true
-        );
-        expect(await internalAdapter.reserveVerificationValue(reservation)).toBe(
-          false
-        );
-        await internalAdapter.deleteVerificationByIdentifier(
-          reservation.identifier
-        );
-        expect(await internalAdapter.reserveVerificationValue(reservation)).toBe(
-          true
-        );
+    it("verifies a magic link for an existing unverified user", async () => {
+      let magicLinkUrl = "";
+      const auth = createAuth((url) => {
+        magicLinkUrl = url;
       });
-
-      it("verifies a magic link for an existing unverified user", async () => {
-        let magicLinkUrl = "";
-        const auth = createAuth((url) => {
-          magicLinkUrl = url;
-        });
-        const email = `magic-${crypto.randomUUID()}@example.com`;
-        const post = (path: string, body: Record<string, unknown>) =>
-          auth.handler(
-            new Request(`http://localhost:3000/api/auth${path}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body),
-            })
-          );
-        const signUp = await post("/sign-up/email", {
-          email,
-          password: "password-12345",
-          name: "Magic Link",
-        });
-        expect(signUp.status).toBe(200);
-        expect((await post("/sign-in/magic-link", { email })).status).toBe(200);
-        expect(magicLinkUrl).not.toBe("");
-
-        const verify = await auth.handler(
-          new Request(magicLinkUrl, { redirect: "manual" })
+      const email = `magic-${crypto.randomUUID()}@example.com`;
+      const post = (path: string, body: Record<string, unknown>) =>
+        auth.handler(
+          new Request(`http://localhost:3000/api/auth${path}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          })
         );
-        expect(verify.status).toBeLessThan(400);
-        const { internalAdapter } = await auth.$context;
-        const found = await internalAdapter.findUserByEmail(email);
-        expect(found?.user.emailVerified).toBe(true);
+      const signUp = await post("/sign-up/email", {
+        email,
+        password: "password-12345",
+        name: "Magic Link",
       });
+      expect(signUp.status).toBe(200);
+      expect((await post("/sign-in/magic-link", { email })).status).toBe(200);
+      expect(magicLinkUrl).not.toBe("");
+
+      const verify = await auth.handler(
+        new Request(magicLinkUrl, { redirect: "manual" })
+      );
+      expect(verify.status).toBeLessThan(400);
+      const { internalAdapter } = await auth.$context;
+      const found = await internalAdapter.findUserByEmail(email);
+      expect(found?.user.emailVerified).toBe(true);
     });
   });
-}
+});
