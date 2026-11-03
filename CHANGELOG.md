@@ -50,6 +50,9 @@
   freezing the first one: the SSR `initialToken` is no longer reused after
   sign-out or for another session, fetched tokens are cached, and hydrating the
   session behind an SSR token no longer re-authenticates (#398, #431)
+- feat: index `account.accountId_providerId_userId`, which Better Auth 1.7 reads
+  on every set, change and reset password; Local Install projects get it when
+  regenerating the schema
 - fix: the Convex plugin turns `session.cookieCache` off and logs a warning when
   it's enabled. The cookie cache isn't supported with Convex (#18, #73, #434),
   and on Better Auth 1.7 an enabled cache made every `getSession` fall back to

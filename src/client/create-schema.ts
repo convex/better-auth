@@ -17,7 +17,14 @@ const resolveCdTarget = (
 // Manually add fields to index on for schema generation,
 // all fields in the schema specialFields are automatically indexed
 export const indexFields = {
-  account: ["accountId", ["accountId", "providerId"], ["providerId", "userId"]],
+  account: [
+    "accountId",
+    ["accountId", "providerId"],
+    // findCredentialAccount: Better Auth 1.7 looks the credential account up
+    // by all three on every set, change and reset password.
+    ["accountId", "providerId", "userId"],
+    ["providerId", "userId"],
+  ],
   // lastRequest: Better Auth prunes expired rows by it.
   rateLimit: ["key", "lastRequest"],
   session: ["expiresAt", ["expiresAt", "userId"]],

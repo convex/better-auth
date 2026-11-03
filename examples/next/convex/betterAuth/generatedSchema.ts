@@ -61,6 +61,7 @@ export const tables = {
   })
     .index("accountId", ["accountId"])
     .index("accountId_providerId", ["accountId","providerId"])
+    .index("accountId_providerId_userId", ["accountId","providerId","userId"])
     .index("providerId_userId", ["providerId","userId"])
     .index("userId", ["userId"]),
   verification: defineTable({
