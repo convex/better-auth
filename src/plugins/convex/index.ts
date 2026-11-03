@@ -6,7 +6,7 @@ import {
   sessionMiddleware,
 } from "better-auth/api";
 import { bearer as bearerPlugin } from "better-auth/plugins/bearer";
-import { jwt as jwtPlugin } from "better-auth/plugins/jwt";
+import { createJwk, jwt as jwtPlugin, signJWT } from "better-auth/plugins/jwt";
 import type { JwtOptions, Jwk } from "better-auth/plugins/jwt";
 import { omit } from "convex-helpers";
 import type { AuthConfig, AuthProvider } from "convex/server";
@@ -220,6 +220,63 @@ export const convex = (opts: {
       },
     },
   });
+  // The jwks table is shared with Better Auth's jwt plugin when an app adds
+  // it, and its keys can be of another algorithm. Convex accepts only the
+  // algorithm in the auth config, so the Convex JWT is signed with that
+  // algorithm pinned (as Better Auth's oauthProvider does), and only keys of
+  // that algorithm are published, exported and rotated. Keys without an alg
+  // predate the column and count as the configured one, as in Better Auth.
+  const alg = jwtOptions.jwks.keyPairConfig.alg;
+  const isConvexKey = (key: { alg?: string | null }) =>
+    key.alg == null || key.alg === alg;
+  const findConvexKeys = async (ctx: {
+    context: { adapter: { findMany: (args: any) => Promise<unknown> } };
+  }) =>
+    (
+      (await ctx.context.adapter.findMany({
+        model: "jwks",
+        sortBy: { field: "createdAt", direction: "desc" },
+      })) as Jwk[]
+    ).filter(isConvexKey);
+  const deleteConvexKeys = async (ctx: {
+    context: {
+      adapter: {
+        findMany: (args: any) => Promise<unknown>;
+        deleteMany: (args: any) => Promise<unknown>;
+      };
+    };
+  }) => {
+    const ids = (await findConvexKeys(ctx)).map((key) => key.id);
+    if (ids.length > 0) {
+      await ctx.context.adapter.deleteMany({
+        model: "jwks",
+        where: [{ field: "id", operator: "in", value: ids }],
+      });
+    }
+  };
+  // The latest Convex key, created if there is none, for static JWKS use.
+  const latestConvexKey = async (ctx: Parameters<typeof createJwk>[0]) => {
+    let [key] = await findConvexKeys(ctx);
+    if (!key) {
+      await createJwk(ctx, jwt.options);
+      [key] = await findConvexKeys(ctx);
+    }
+    // Set alg, otherwise Better Auth defaults the static key to EdDSA
+    return [{ ...key, alg }];
+  };
+  const signConvexJwt = async (
+    ctx: Parameters<typeof signJWT>[0],
+    session: { user: User & Record<string, any>; session: Session }
+  ) =>
+    await signJWT(ctx, {
+      options: jwt.options,
+      // definePayload above adds sessionId and iat
+      payload: {
+        ...(await jwtOptions.jwt.definePayload(session)),
+        sub: session.user.id,
+      },
+      signingAlgorithm: alg,
+    });
   // Bearer plugin converts the session token to a cookie
   // for cross domain social login after code verification,
   // and is required for the headers() helper to work.
@@ -328,14 +385,7 @@ export const convex = (opts: {
               return;
             }
             try {
-              const { token } = await jwt.endpoints.getToken({
-                ...ctx,
-                headers: {},
-                method: "GET",
-                asResponse: false,
-                returnHeaders: false,
-                returnStatus: false,
-              });
+              const token = await signConvexJwt(ctx, ctx.context.session);
               const jwtCookie = ctx.context.createAuthCookie(JWT_COOKIE_NAME, {
                 maxAge: jwtExpirationSeconds,
               });
@@ -519,13 +569,22 @@ export const convex = (opts: {
           },
         },
         async (ctx) => {
-          const response = await jwt.endpoints.getJwks({
-            ...ctx,
-            asResponse: false,
-            returnHeaders: false,
-            returnStatus: false,
-          });
-          return response;
+          const getKeys = async () =>
+            (
+              await jwt.endpoints.getJwks({
+                ...ctx,
+                asResponse: false,
+                returnHeaders: false,
+                returnStatus: false,
+              })
+            ).keys.filter(isConvexKey);
+          // Only the keys Convex JWTs are signed with
+          let keys = await getKeys();
+          if (keys.length === 0 && !opts.jwks) {
+            await createJwk(ctx, jwt.options);
+            keys = await getKeys();
+          }
+          return ctx.json({ keys });
         }
       ),
       getLatestJwks: createAuthEndpoint(
@@ -544,25 +603,7 @@ export const convex = (opts: {
           },
         },
         async (ctx) => {
-          // Ensure at least one key exists
-          await jwtPlugin(jwtOptions).endpoints.getJwks({
-            ...ctx,
-            method: "GET",
-            asResponse: false,
-            returnHeaders: false,
-            returnStatus: false,
-          });
-          const jwks: any[] = await ctx.context.adapter.findMany({
-            model: "jwks",
-            limit: 1,
-            sortBy: {
-              field: "createdAt",
-              direction: "desc",
-            },
-          });
-          // Add alg to jwks, otherwise Better Auth will default to EdDSA
-          jwks[0].alg = jwtOptions.jwks.keyPairConfig.alg;
-          return jwks;
+          return await latestConvexKey(ctx);
         }
       ),
       rotateKeys: createAuthEndpoint(
@@ -581,28 +622,9 @@ export const convex = (opts: {
           },
         },
         async (ctx) => {
-          await ctx.context.adapter.deleteMany({
-            model: "jwks",
-            where: [],
-          });
-
-          await jwtPlugin(jwtOptions).endpoints.getJwks({
-            ...ctx,
-            method: "GET",
-            asResponse: false,
-            returnHeaders: false,
-            returnStatus: false,
-          });
-          const jwks: any[] = await ctx.context.adapter.findMany({
-            model: "jwks",
-            limit: 1,
-            sortBy: {
-              field: "createdAt",
-              direction: "desc",
-            },
-          });
-          jwks[0].alg = jwtOptions.jwks.keyPairConfig.alg;
-          return jwks;
+          // Keys of other plugins, such as Better Auth's jwt plugin, stay
+          await deleteConvexKeys(ctx);
+          return await latestConvexKey(ctx);
         }
       ),
       getConvexToken: createAuthEndpoint(
@@ -636,17 +658,12 @@ export const convex = (opts: {
         },
         async (ctx) => {
           const runEndpoint = async () => {
-            const response = await jwt.endpoints.getToken({
-              ...ctx,
-              asResponse: false,
-              returnHeaders: false,
-              returnStatus: false,
-            });
+            const token = await signConvexJwt(ctx, ctx.context.session);
             const jwtCookie = ctx.context.createAuthCookie(JWT_COOKIE_NAME, {
               maxAge: jwtExpirationSeconds,
             });
-            ctx.setCookie(jwtCookie.name, response.token, jwtCookie.attributes);
-            return response;
+            ctx.setCookie(jwtCookie.name, token, jwtCookie.attributes);
+            return ctx.json({ token });
           };
           try {
             return await runEndpoint();
@@ -655,10 +672,7 @@ export const convex = (opts: {
             // roll the keys
             if (!opts.jwks && error?.code === "ERR_JOSE_NOT_SUPPORTED") {
               if (opts.jwksRotateOnTokenGenerationError) {
-                await ctx.context.adapter.deleteMany({
-                  model: "jwks",
-                  where: [],
-                });
+                await deleteConvexKeys(ctx);
                 return await runEndpoint();
               } else {
                 // eslint-disable-next-line no-console
