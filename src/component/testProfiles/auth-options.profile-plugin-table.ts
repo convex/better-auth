@@ -54,11 +54,10 @@ export const pluginTableProfileOptions = {
       },
     },
     {
-      // Table-level unique index (Better Auth 1.7 `indexes`), as declared by
-      // e.g. the device-authorization and oauth-provider plugins.
-      id: "compound-unique-test",
+      // Compound table-level index (Better Auth 1.7 `indexes`).
+      id: "compound-index-test",
       schema: {
-        compoundUnique: {
+        compoundIndex: {
           fields: {
             groupId: {
               type: "string",
@@ -73,7 +72,7 @@ export const pluginTableProfileOptions = {
               required: false,
             },
           },
-          indexes: [{ fields: ["groupId", "slot"], unique: true }],
+          indexes: [{ fields: ["groupId", "slot"] }],
         },
       },
     },

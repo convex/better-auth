@@ -6956,7 +6956,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -7323,7 +7323,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     label?: null | string;
                     slot: string;
                   };
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                 }
               | {
                   data: {
@@ -7824,7 +7824,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -8470,7 +8470,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -8689,7 +8689,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "oneToOneTable"
               | "one_to_one_table"
               | "testModel"
-              | "compoundUnique"
+              | "compoundIndex"
               | "organization"
               | "member"
               | "team"
@@ -8752,7 +8752,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "oneToOneTable"
               | "one_to_one_table"
               | "testModel"
-              | "compoundUnique"
+              | "compoundIndex"
               | "organization"
               | "member"
               | "team"
@@ -9361,7 +9361,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 }
               | {
                   increment: Record<string, number>;
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   set?: {
                     groupId?: string;
                     label?: null | string;
@@ -10175,7 +10175,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   update: {
                     groupId?: string;
                     label?: null | string;
@@ -10992,7 +10992,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   update: {
                     groupId?: string;
                     label?: null | string;
@@ -11676,7 +11676,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -12043,7 +12043,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     label?: null | string;
                     slot: string;
                   };
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                 }
               | {
                   data: {
@@ -12544,7 +12544,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -13190,7 +13190,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -13409,7 +13409,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "oneToOneTable"
               | "one_to_one_table"
               | "testModel"
-              | "compoundUnique"
+              | "compoundIndex"
               | "organization"
               | "member"
               | "team"
@@ -13472,7 +13472,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "oneToOneTable"
               | "one_to_one_table"
               | "testModel"
-              | "compoundUnique"
+              | "compoundIndex"
               | "organization"
               | "member"
               | "team"
@@ -14081,7 +14081,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 }
               | {
                   increment: Record<string, number>;
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   set?: {
                     groupId?: string;
                     label?: null | string;
@@ -14895,7 +14895,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   update: {
                     groupId?: string;
                     label?: null | string;
@@ -15712,7 +15712,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   update: {
                     groupId?: string;
                     label?: null | string;
@@ -16396,7 +16396,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -16763,7 +16763,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     label?: null | string;
                     slot: string;
                   };
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                 }
               | {
                   data: {
@@ -17264,7 +17264,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -17910,7 +17910,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -18129,7 +18129,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "oneToOneTable"
               | "one_to_one_table"
               | "testModel"
-              | "compoundUnique"
+              | "compoundIndex"
               | "organization"
               | "member"
               | "team"
@@ -18192,7 +18192,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "oneToOneTable"
               | "one_to_one_table"
               | "testModel"
-              | "compoundUnique"
+              | "compoundIndex"
               | "organization"
               | "member"
               | "team"
@@ -18801,7 +18801,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 }
               | {
                   increment: Record<string, number>;
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   set?: {
                     groupId?: string;
                     label?: null | string;
@@ -19615,7 +19615,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   update: {
                     groupId?: string;
                     label?: null | string;
@@ -20432,7 +20432,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   update: {
                     groupId?: string;
                     label?: null | string;
@@ -21116,7 +21116,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -21483,7 +21483,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     label?: null | string;
                     slot: string;
                   };
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                 }
               | {
                   data: {
@@ -21984,7 +21984,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -22630,7 +22630,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -22849,7 +22849,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "oneToOneTable"
               | "one_to_one_table"
               | "testModel"
-              | "compoundUnique"
+              | "compoundIndex"
               | "organization"
               | "member"
               | "team"
@@ -22912,7 +22912,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "oneToOneTable"
               | "one_to_one_table"
               | "testModel"
-              | "compoundUnique"
+              | "compoundIndex"
               | "organization"
               | "member"
               | "team"
@@ -23521,7 +23521,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 }
               | {
                   increment: Record<string, number>;
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   set?: {
                     groupId?: string;
                     label?: null | string;
@@ -24335,7 +24335,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   update: {
                     groupId?: string;
                     label?: null | string;
@@ -25152,7 +25152,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   update: {
                     groupId?: string;
                     label?: null | string;
@@ -25836,7 +25836,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -26203,7 +26203,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     label?: null | string;
                     slot: string;
                   };
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                 }
               | {
                   data: {
@@ -26704,7 +26704,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -27350,7 +27350,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
@@ -27569,7 +27569,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "oneToOneTable"
               | "one_to_one_table"
               | "testModel"
-              | "compoundUnique"
+              | "compoundIndex"
               | "organization"
               | "member"
               | "team"
@@ -27632,7 +27632,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "oneToOneTable"
               | "one_to_one_table"
               | "testModel"
-              | "compoundUnique"
+              | "compoundIndex"
               | "organization"
               | "member"
               | "team"
@@ -28241,7 +28241,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 }
               | {
                   increment: Record<string, number>;
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   set?: {
                     groupId?: string;
                     label?: null | string;
@@ -29055,7 +29055,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   update: {
                     groupId?: string;
                     label?: null | string;
@@ -29872,7 +29872,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
-                  model: "compoundUnique";
+                  model: "compoundIndex";
                   update: {
                     groupId?: string;
                     label?: null | string;

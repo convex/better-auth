@@ -12,9 +12,8 @@ import { options } from "../../auth-options.js";
 // - a `nullable` table with optional fields that are unindexed (`plain`),
 //   covered by a table-level non-unique index (`indexed`), and unique
 //   (`uniq`), plus a numeric `counter` for incrementOne;
-// - a `clientResource` table with a compound table-level unique index on
-//   `[clientId, resourceId]`, modelled on `@better-auth/oauth-provider`'s
-//   `oauthClientResource`.
+// - a `clientResource` table with a compound table-level index on
+//   `[clientId, resourceId]`.
 export const convexSemanticsProfileOptions = {
   ...options,
   plugins: [
@@ -38,7 +37,7 @@ export const convexSemanticsProfileOptions = {
             resourceId: { type: "string", required: true },
             label: { type: "string", required: false },
           },
-          indexes: [{ fields: ["clientId", "resourceId"], unique: true }],
+          indexes: [{ fields: ["clientId", "resourceId"] }],
         },
       },
     },

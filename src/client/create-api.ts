@@ -16,6 +16,7 @@ import {
   listOne,
   paginate,
   selectFields,
+  withTableLevelUniqueFields,
 } from "./adapter-utils.js";
 import { getAuthTables } from "better-auth/db";
 import type { TableNames } from "../component/_generated/dataModel.js";
@@ -63,7 +64,9 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
   schema: Schema,
   createAuthOptions: (ctx: any) => BetterAuthOptions
 ) => {
-  const betterAuthSchema = getAuthTables(createAuthOptions({} as any));
+  const betterAuthSchema = withTableLevelUniqueFields(
+    getAuthTables(createAuthOptions({} as any))
+  );
   return {
     create: mutationGeneric({
       args: {
@@ -267,11 +270,7 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
               `Attempted to set unique fields in multiple documents in ${args.input.model} with the same value. Fields: ${Object.keys(args.input.update ?? {}).join(", ")}`
             );
           }
-          // Sequential on purpose: each document's unique check must see the
-          // patches already made to earlier documents in this page, or a
-          // partial update to a compound unique constraint can give two
-          // documents the same tuple.
-          for (const doc of page) {
+          await asyncMap(page, async (doc) => {
             await checkUniqueFields(
               ctx,
               schema,
@@ -299,7 +298,7 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
                 }
               );
             }
-          }
+          });
         }
         return {
           ...result,

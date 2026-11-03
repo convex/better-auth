@@ -1,4 +1,5 @@
 import type { BetterAuthDBSchema, DBFieldAttribute } from "better-auth/db";
+import { assertNoCompoundUniqueIndexes } from "./adapter-utils.js";
 
 const resolveCdTarget = (
   relativeDir: string | null,
@@ -107,6 +108,7 @@ export const createSchema = async ({
   tables: BetterAuthDBSchema;
   file?: string;
 }) => {
+  assertNoCompoundUniqueIndexes(tables);
   // Hide these node builtins from Convex's esbuild so it doesn't try to
   // resolve them at bundle time. Only runs from the better-auth CLI.
   const path = await import(["p", "a", "t", "h"].join(""));

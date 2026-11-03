@@ -60,7 +60,7 @@ const testModelTable = defineTable({
   json: v.optional(v.any()),
 }).index("nullableReference", ["nullableReference"]);
 
-const compoundUniqueTable = defineTable({
+const compoundIndexTable = defineTable({
   groupId: v.string(),
   slot: v.string(),
   label: v.optional(v.union(v.null(), v.string())),
@@ -129,7 +129,7 @@ const schema = defineSchema({
   oneToOneTable,
   one_to_one_table: oneToOneTableRenamed,
   testModel: testModelTable,
-  compoundUnique: compoundUniqueTable,
+  compoundIndex: compoundIndexTable,
   organization: organizationTable,
   member: memberTable,
   team: teamTable,

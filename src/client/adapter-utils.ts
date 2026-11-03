@@ -58,49 +58,87 @@ export const adapterArgsValidator = v.object({
   offset: v.optional(v.number()),
 });
 
-// Unique constraints of a model, as tuples of Convex field names: field-level
-// `unique: true` fields, plus table-level unique indexes (Better Auth 1.7
-// `indexes: [{ fields, unique: true }]`, used by e.g. device-authorization
-// and oauth-provider plugins).
-const getUniqueConstraints = (
-  betterAuthSchema: BetterAuthDBSchema,
-  model: string
-): string[][] => {
-  const table = Object.values(betterAuthSchema).find(
-    (value) => value.modelName === model
-  );
-  if (!table) {
-    return [];
+// Compound unique indexes can't be enforced by this adapter. Fail when the
+// schema is generated or loaded rather than accept writes that violate them.
+export const assertNoCompoundUniqueIndexes = (
+  betterAuthSchema: BetterAuthDBSchema
+) => {
+  for (const [key, table] of Object.entries(betterAuthSchema)) {
+    for (const index of table.indexes ?? []) {
+      if (index.unique && index.fields.length > 1) {
+        throw new Error(
+          `${table.modelName ?? key}: compound unique index [${index.fields.join(", ")}] is not supported by the Convex adapter`
+        );
+      }
+    }
   }
-  const fieldName = (key: string) => table.fields[key]?.fieldName ?? key;
-  const fieldConstraints = Object.entries(table.fields)
-    .filter(([, value]) => value.unique)
-    .map(([key]) => [fieldName(key)]);
-  const indexConstraints = (table.indexes ?? [])
-    .filter((index) => index.unique)
-    .map((index) => index.fields.map(fieldName));
-  return [...fieldConstraints, ...indexConstraints];
 };
-// A field is unique on its own only via a single-field constraint; being part
-// of a compound unique index does not make its values unique.
+
+// Better Auth 1.7 plugins can declare uniqueness as a table-level index
+// (`indexes: [{ fields: ["deviceCode"], unique: true }]`, e.g.
+// device-authorization) instead of field-level `unique: true`. Mark the field
+// of each single-field unique index as unique so the field-level checks below
+// enforce it. Compound unique indexes throw (assertNoCompoundUniqueIndexes).
+export const withTableLevelUniqueFields = (
+  betterAuthSchema: BetterAuthDBSchema
+): BetterAuthDBSchema => {
+  assertNoCompoundUniqueIndexes(betterAuthSchema);
+  return Object.fromEntries(
+    Object.entries(betterAuthSchema).map(([key, table]) => {
+      const uniqueFields = (table.indexes ?? [])
+        .filter((index) => index.unique && index.fields.length === 1)
+        .map((index) => index.fields[0]);
+      if (!uniqueFields.length) {
+        return [key, table];
+      }
+      return [
+        key,
+        {
+          ...table,
+          fields: Object.fromEntries(
+            Object.entries(table.fields).map(([field, attribute]) => [
+              field,
+              uniqueFields.includes(field)
+                ? { ...attribute, unique: true }
+                : attribute,
+            ])
+          ),
+        },
+      ];
+    })
+  );
+};
+
 const isUniqueField = (
   betterAuthSchema: BetterAuthDBSchema,
   model: string,
   field: string
-) =>
-  getUniqueConstraints(betterAuthSchema, model).some(
-    (constraint) => constraint.length === 1 && constraint[0] === field
-  );
-// Whether the input sets every field of some unique constraint, i.e. writing
-// it to more than one document would violate that constraint.
+) => {
+  const fields = Object.values(betterAuthSchema).find(
+    (value) => value.modelName === model
+  )?.fields;
+  if (!fields) {
+    return false;
+  }
+  // Adapter inputs and where clauses use the stored (Convex) field name.
+  return Object.entries(fields)
+    .filter(([, value]) => value.unique)
+    .map(([key, value]) => value.fieldName ?? key)
+    .includes(field);
+};
+// Null and unset values are never unique-constrained (SQL unique index
+// semantics), so they don't count as setting a unique field.
 export const hasUniqueFields = (
   betterAuthSchema: BetterAuthDBSchema,
   model: string,
   input: Record<string, any>
 ) => {
-  return getUniqueConstraints(betterAuthSchema, model).some((constraint) =>
-    constraint.every((field) => field in input)
-  );
+  for (const [field, value] of Object.entries(input)) {
+    if (value != null && isUniqueField(betterAuthSchema, model, field)) {
+      return true;
+    }
+  }
+  return false;
 };
 
 // `eq null` must match unset fields as well as explicit nulls (SQL `IS NULL`):
@@ -270,45 +308,30 @@ export const checkUniqueFields = async <
   input: Record<string, any>,
   doc?: Record<string, any>
 ) => {
-  // On update, the constraint applies to the document as it will be after
-  // the write.
-  const merged: Record<string, any> = { ...doc, ...input };
-  for (const constraint of getUniqueConstraints(betterAuthSchema, table)) {
-    // Only constraints this write touches can newly conflict, and a tuple
-    // with a missing or null member is not constrained (SQL semantics).
-    if (
-      !constraint.some((field) => field in input) ||
-      constraint.some(
-        (field) => merged[field] === undefined || merged[field] === null
-      )
-    ) {
+  if (!hasUniqueFields(betterAuthSchema, table, input)) {
+    return;
+  }
+  for (const [field, value] of Object.entries(input)) {
+    // Null and unset values never collide (SQL unique index semantics).
+    if (value == null || !isUniqueField(betterAuthSchema, table, field)) {
       continue;
     }
     const { index } =
       findIndex(schema, {
         model: table,
-        where: constraint.map((field) => ({
-          field,
-          operator: "eq" as const,
-          value: merged[field],
-        })),
+        where: [{ field, operator: "eq", value }],
       }) || {};
     if (!index) {
-      throw new Error(`No index found for ${table}.${constraint.join("_")}`);
+      throw new Error(`No index found for ${table}${field}`);
     }
-    // findIndex matched the constraint fields as the index prefix.
-    const prefixFields = index.fields.slice(0, constraint.length);
+    // take(2) rather than unique(): pre-existing duplicates must not crash
+    // the check, and the document being updated is not a conflict.
     const existingDocs = await ctx.db
       .query(table as any)
-      .withIndex(index.indexDescriptor, (q) =>
-        prefixFields.reduce(
-          (range: any, field: string) => range.eq(field, merged[field]),
-          q
-        )
-      )
+      .withIndex(index.indexDescriptor, (q) => q.eq(field, value))
       .take(2);
     if (existingDocs.some((existingDoc) => existingDoc._id !== doc?._id)) {
-      throw new Error(`${table} ${constraint.join("_")} already exists`);
+      throw new Error(`${table} ${field} already exists`);
     }
   }
 };
