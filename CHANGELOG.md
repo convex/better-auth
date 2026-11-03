@@ -15,6 +15,10 @@
 - fix: security hardening beyond 0.12.7: forwarded origin checks, the Convex JWT
   cookie on session switch and expiry, JWT signing algorithm next to the `jwt`
   plugin (#97), credentials redacted from verbose logs
+- breaking: `verbose` no longer turns on the Better Auth adapter's `debugLogs`,
+  which log full database rows including session tokens and password hashes;
+  verbose logs now hold only redacted headers. Turn on adapter debug logs with
+  the new `debugLogs` option on `createClient()`
 - fix: native `consumeOne` and `incrementOne`, and 1.7's verification
   reservations work (#432); 1.7 schema columns (#435); `rateLimit.lastRequest`
   index (#446)

@@ -362,6 +362,26 @@ describe("createClient route registration", () => {
 });
 
 describe("createClient verbose logging", () => {
+  it("doesn't turn on the adapter's debugLogs", () => {
+    // Adapter debug logs print full database rows, including session tokens
+    // and password hashes, so verbose mode must not enable them.
+    const client = createClient(component, { verbose: true });
+    const adapter = client.adapter({} as any)({} as any) as {
+      options?: { adapterConfig?: { debugLogs?: unknown } };
+    };
+    expect(adapter.options?.adapterConfig?.debugLogs).toBe(false);
+  });
+
+  it("passes debugLogs to the adapter", () => {
+    const client = createClient(component, { debugLogs: { findOne: true } });
+    const adapter = client.adapter({} as any)({} as any) as {
+      options?: { adapterConfig?: { debugLogs?: unknown } };
+    };
+    expect(adapter.options?.adapterConfig?.debugLogs).toEqual({
+      findOne: true,
+    });
+  });
+
   const requestSecrets = {
     cookie: "better-auth.session_token=cookie-secret",
     authorization: "Bearer authorization-secret",

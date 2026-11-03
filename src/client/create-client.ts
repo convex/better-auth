@@ -15,6 +15,7 @@ import type {
 import { ConvexError, v } from "convex/values";
 import type { Infer } from "convex/values";
 import { convexAdapter } from "./adapter.js";
+import type { DBAdapterDebugLogOption } from "better-auth/adapters";
 import { corsRouter } from "convex-helpers/server/cors";
 import type defaultSchema from "../component/schema.js";
 import type { CreateAuth, GenericCtx } from "./index.js";
@@ -248,7 +249,11 @@ const redactHeaders = (headers: Headers) =>
  * `./_generated/api` once you've configured it in `convex.config.ts`.
  * @param config - Configuration options for the component.
  * @param config.local - Local schema configuration.
- * @param config.verbose - Whether to enable verbose logging.
+ * @param config.verbose - Whether to log the configured `baseURL` and the
+ * request and response headers of each auth request, with credentials redacted.
+ * @param config.debugLogs - Better Auth adapter debug logs, off by default.
+ * They log full database rows without redaction, including session tokens and
+ * password hashes.
  * @param config.triggers - Triggers configuration.
  * @param config.authFunctions - Authentication functions configuration.
  */
@@ -263,6 +268,7 @@ export const createClient = <
       schema?: Schema;
     };
     verbose?: boolean;
+    debugLogs?: DBAdapterDebugLogOption;
   } & (
     | {
         triggers: Triggers<DataModel, Schema>;
@@ -350,10 +356,7 @@ export const createClient = <
      * @returns The Convex database adapter
      */
     adapter: (ctx: GenericCtx<DataModel>) =>
-      convexAdapter<DataModel, typeof ctx, Schema>(ctx, component, {
-        ...config,
-        debugLogs: config?.verbose,
-      }),
+      convexAdapter<DataModel, typeof ctx, Schema>(ctx, component, config),
 
     /**
      * Returns the Better Auth auth object and headers for using Better Auth API
