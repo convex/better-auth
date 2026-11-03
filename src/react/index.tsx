@@ -118,14 +118,24 @@ export function ConvexBetterAuthProvider({
 
 let initialTokenUsed = false;
 
+// Convex JWTs minted by the convex plugin carry the Better Auth session id.
+const getTokenSessionId = (token: string) => {
+  try {
+    const payload = token.split(".")[1];
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const { sessionId } = JSON.parse(json);
+    return typeof sessionId === "string" ? sessionId : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+type CachedToken = { sessionId?: string; token: string };
+
 function useUseAuthFromBetterAuth(
   authClient: AuthClient,
   initialToken?: string | null
 ) {
-  const [cachedToken, setCachedToken] = useState<string | null>(
-    initialTokenUsed ? null : (initialToken ?? null)
-  );
-  const pendingTokenRef = useRef<Promise<string | null> | null>(null);
   useEffect(() => {
     if (!initialTokenUsed) {
       initialTokenUsed = true;
@@ -137,53 +147,87 @@ function useUseAuthFromBetterAuth(
       function useAuthFromBetterAuth() {
         const { data: session, isPending: isSessionPending } =
           authClient.useSession();
-        const sessionId = session?.session?.id;
+        // The SSR token stands in for the session until it first loads.
+        const [ssrToken, setSsrToken] = useState<CachedToken | null>(() => {
+          const token = initialTokenUsed ? null : initialToken;
+          return token ? { sessionId: getTokenSessionId(token), token } : null;
+        });
         useEffect(() => {
-          if (!session && !isSessionPending && cachedToken) {
-            setCachedToken(null);
+          if (!isSessionPending && ssrToken) {
+            setSsrToken(null);
           }
-        }, [session, isSessionPending]);
+        }, [isSessionPending, ssrToken]);
+        // Tokens are cached per session, so a token is never reused for a
+        // different session. Refs, not state in the enclosing hook: that
+        // state was captured once by this memoized hook and never updated.
+        const cachedTokenRef = useRef(ssrToken);
+        const pendingTokenRef = useRef<{
+          sessionId?: string;
+          promise: Promise<string | null>;
+        } | null>(null);
+
+        const isSsrTokenActive = isSessionPending && ssrToken !== null;
+        const isAuthenticated = Boolean(session?.session) || isSsrTokenActive;
+        const sessionId = isSsrTokenActive
+          ? ssrToken.sessionId
+          : session?.session?.id;
+
         const fetchAccessToken = useCallback(
           async ({
             forceRefreshToken = false,
           }: { forceRefreshToken?: boolean } = {}) => {
-            if (cachedToken && !forceRefreshToken) {
-              return cachedToken;
+            if (!forceRefreshToken) {
+              // Prefer an in-flight request, which may be refreshing a
+              // rejected token, over the cached token.
+              const pending = pendingTokenRef.current;
+              if (pending && pending.sessionId === sessionId) {
+                return pending.promise;
+              }
+              const cached = cachedTokenRef.current;
+              if (cached && cached.sessionId === sessionId) {
+                return cached.token;
+              }
             }
-            if (!forceRefreshToken && pendingTokenRef.current) {
-              return pendingTokenRef.current;
-            }
-            pendingTokenRef.current = authClient.convex
+            const promise: Promise<string | null> = authClient.convex
               .token({ fetchOptions: { throw: false } })
-              .then(({ data }: FetchResult<{ token?: string | null }>) => {
-                const token = data?.token || null;
-                setCachedToken(token);
+              .then(
+                ({ data }: FetchResult<{ token?: string | null }>) =>
+                  data?.token || null
+              )
+              .catch(() => null)
+              .then((token) => {
+                if (pendingTokenRef.current?.promise === promise) {
+                  pendingTokenRef.current = null;
+                }
+                if (token) {
+                  cachedTokenRef.current = { sessionId, token };
+                } else if (
+                  cachedTokenRef.current &&
+                  cachedTokenRef.current.sessionId === sessionId
+                ) {
+                  cachedTokenRef.current = null;
+                }
                 return token;
-              })
-              .catch(() => {
-                setCachedToken(null);
-                return null;
-              })
-              .finally(() => {
-                pendingTokenRef.current = null;
               });
-            return pendingTokenRef.current;
+            pendingTokenRef.current = { sessionId, promise };
+            return promise;
           },
-          // Build a new fetchAccessToken to trigger setAuth() whenever the
-          // session changes.
-          // eslint-disable-next-line react-hooks/exhaustive-deps
+          // Build a new fetchAccessToken, which makes Convex call setAuth(),
+          // only when the authenticated session changes. Hydrating the
+          // session behind an SSR token keeps the same one.
           [sessionId]
         );
         return useMemo(
           () => ({
-            isLoading: isSessionPending && !cachedToken,
-            isAuthenticated: Boolean(session?.session) || cachedToken !== null,
+            isLoading: isSessionPending && !isAuthenticated,
+            isAuthenticated,
             fetchAccessToken,
           }),
-          // eslint-disable-next-line react-hooks/exhaustive-deps
-          [isSessionPending, sessionId, fetchAccessToken, cachedToken]
+          [isSessionPending, isAuthenticated, fetchAccessToken]
         );
       },
+    // initialToken is only read when the hook first mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [authClient]
   );
 }
