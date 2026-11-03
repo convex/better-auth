@@ -17,13 +17,11 @@
 - feat: index `rateLimit.lastRequest` for expired row pruning
 - breaking: `findMany` sorted on a field no index covers fails with an error
   naming the index it needs, instead of returning rows in creation order
-- fix: registerRoutes sets the request origin itself. A forwarded scheme and
-  host must together form an exact trusted origin, and a client's own `host`
-  and `x-forwarded-*` headers are replaced, so neither can pick the origin
-  used for emailed links (follow-up to GHSA-pgx2-m66h-x29f). Dynamic `baseURL`
-  configs resolve without `advanced.trustedProxyHeaders`
-- fix: the Next.js and TanStack Start proxy handlers drop incoming
-  `x-forwarded-host` / `x-forwarded-proto`
+- fix: the origin `registerRoutes` sets (0.12.7) also rejects a forwarded host
+  that carries a path, query or userinfo, and the Next.js and TanStack Start
+  proxy handlers drop incoming `x-forwarded-host` / `x-forwarded-proto`.
+  Dynamic `baseURL` configs resolve on Better Auth 1.7 without
+  `advanced.trustedProxyHeaders`
 - fix: `AuthClient` type is structural so real auth clients are assignable again
 - breaking: the Convex plugin serves its OpenID discovery document directly and
   no longer advertises `/oauth2/*` endpoints that nothing served; the removed
@@ -33,11 +31,6 @@
 - breaking: Convex plugin endpoint keys renamed to `getConvexToken`,
   `getConvexJwks` and `getConvexOpenIdConfig` to avoid being shadowed by the
   `jwt` and `oauth-provider` plugins (#395); HTTP paths are unchanged
-- fix: the Convex JWT cookie is no longer issued on sign-in. It is only set by
-  `/convex/token` and by `/get-session` and `/update-session` with a valid
-  session, and is cleared on requests that start or end a session. A sign-in
-  that a later plugin cancels (two-factor authentication pending) no longer
-  yields a Convex JWT for the deleted session.
 - fix: the Convex JWT cookie is also cleared when a request switches to a
   different session without a sign-in path (multi-session `setActive`, admin
   impersonation, email verification auto sign-in), so a cached JWT for the
