@@ -53,8 +53,6 @@ export default function EnableTwoFactor() {
       const { data } = await authClient.twoFactor.enable({
         password,
       });
-      // Better Auth 1.7 returns a discriminated union: TOTP details only
-      // when method is "totp".
       if (data?.method === "totp") {
         setTotpUri(data.totpURI);
         if (data.backupCodes) {
@@ -62,8 +60,6 @@ export default function EnableTwoFactor() {
         }
         setStep("qr-verify");
       } else {
-        // The client returns errors instead of throwing them, so a wrong
-        // password lands here rather than in the catch below.
         alert(
           "Failed to enable 2FA. Please check your password and try again.",
         );

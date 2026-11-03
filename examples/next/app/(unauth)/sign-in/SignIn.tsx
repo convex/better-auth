@@ -152,8 +152,6 @@ export default function SignIn() {
   };
 
   const handleSlackSignIn = async () => {
-    // Better Auth 1.7 signs in with generic OAuth providers through the
-    // social sign-in path; the provider id is the genericOAuth providerId.
     await authClient.signIn.social(
       {
         provider: "slack",
