@@ -53,6 +53,16 @@
 - feat: index `account.accountId_providerId_userId`, which Better Auth 1.7 reads
   on every set, change and reset password; Local Install projects get it when
   regenerating the schema
+- fix: `verbose` logs redact credential headers (`Cookie`, `Authorization`,
+  `Set-Cookie`, `Better-Auth-Cookie`, `Set-Better-Auth-Cookie`,
+  `Set-Auth-Token`, `Set-Auth-JWT`, `X-Api-Key`) and the query string of
+  `Location` and `Referer`; the CORS router's own header logging is off
+- fix: the cross-domain client no longer clears a session stored while an
+  empty `get-session` answer was in flight, e.g. right after a one-time token
+  was redeemed on page load
+- docs: the Next.js example's public `getUserById` query, which returned any
+  user to anyone, is removed; the `getAnyUserById` and Local Install snippets
+  check the caller
 - fix: the Convex plugin turns `session.cookieCache` off and logs a warning when
   it's enabled. The cookie cache isn't supported with Convex (#18, #73, #434),
   and on Better Auth 1.7 an enabled cache made every `getSession` fall back to

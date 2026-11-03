@@ -200,7 +200,15 @@ export const crossDomainClient = (
             ) {
               const data = context.data;
               storage.setItem(localCacheName, JSON.stringify(data));
-              if (data === null) {
+              // The stored cookie changed while this request was in flight,
+              // e.g. a one-time token was redeemed: the null answer is about
+              // the cookie sent, so it must not clear the new session.
+              const sentCookie =
+                context.request.headers?.get?.("better-auth-cookie") ?? null;
+              const cookieChanged =
+                sentCookie !== null &&
+                sentCookie !== getCookie(storage.getItem(cookieName) || "{}");
+              if (data === null && !cookieChanged) {
                 // Preserve non-session cookies (e.g. two_factor) when
                 // get-session returns null during 2FA pending state.
                 // Previously this unconditionally set cookieName to "{}",
