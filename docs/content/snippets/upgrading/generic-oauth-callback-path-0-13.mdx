@@ -4,11 +4,10 @@
 
 This step applies only to apps that use the `genericOAuth()` plugin.
 
-Better Auth 1.7 serves Generic OAuth callbacks at the standard social callback
-path, `/api/auth/callback/<providerId>`, and no longer serves
-`/api/auth/oauth2/callback/<providerId>`. Change the redirect URI registered
-with each provider, and any `redirectURI` you set in a provider config, to the
-new path.
+Better Auth 1.7 moved Generic OAuth callbacks from
+`/api/auth/oauth2/callback/<providerId>` to the standard social path,
+`/api/auth/callback/<providerId>`. Change the redirect URI registered with each
+provider, and any `redirectURI` in a provider config, to the new path.
 
 ```ts
 redirectURI: `${siteUrl}/api/auth/oauth2/callback/slack`, // [!code --]

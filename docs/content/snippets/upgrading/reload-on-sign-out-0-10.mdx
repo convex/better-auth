@@ -4,7 +4,7 @@
 
 Update your sign-out functions to reload the page, so that `expectAuth` works
 correctly on the next sign-in. In apps with authenticated routes, the reload can
-usually replace a redirect after sign-out.
+usually replace a redirect.
 
 ```ts title="src/lib/auth-client.ts"
 export const handleSignOut = async () => {

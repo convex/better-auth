@@ -2,14 +2,13 @@
 
 ### Regenerate schema
 
-Regenerate the schema whenever you update Better Auth with Local Install. Better
-Auth 1.7 adds fields that Convex can write only after the schema declares them:
-`failedVerificationCount` and `lockedUntil` on `twoFactor`, `alg` and `crv` on
-`jwks`, and, for the organization plugin, `memberCount` on `team` and
-`membershipKey` on `teamMember`. Better Auth 1.7 also adds an
-`accountId_providerId_userId` index on `account`, which Better Auth reads when a
-user sets, changes or resets a password. Without it, each of those operations
-scans the whole table.
+With Local Install, regenerate the schema whenever you update Better Auth.
+Version 1.7 adds fields that Convex can write only after the schema declares
+them: `failedVerificationCount` and `lockedUntil` on `twoFactor`, `alg` and
+`crv` on `jwks`, and, for the organization plugin, `memberCount` on `team` and
+`membershipKey` on `teamMember`. It also adds an `accountId_providerId_userId`
+index on `account`, which Better Auth reads when a user sets, changes or resets
+a password. Without the index, each of those operations scans the whole table.
 
 Run the Better Auth CLI as `npx auth generate`, which replaces the older
 `npx @better-auth/cli generate` command.
@@ -22,10 +21,9 @@ npx auth generate
 If your options include the `oidcProvider` plugin, remove it before you generate
 the schema, because Better Auth 1.7 no longer has it.
 
-If you use the organization plugin with teams and already have teams, Convex
-rejects the deploy, because the generated schema requires `team.memberCount` and
-your existing teams don't have it. First, make `memberCount` optional in the
-generated schema and deploy:
+If your database already has organization teams, Convex rejects the deploy: the
+generated schema requires `team.memberCount`, and existing teams don't have it.
+First, make `memberCount` optional and deploy:
 
 ```ts title="convex/betterAuth/schema.ts"
 team: defineTable({
@@ -36,9 +34,8 @@ team: defineTable({
 });
 ```
 
-Then set `memberCount` on each team from its existing members. This mutation
-updates 100 teams per transaction and schedules itself for the next batch, so it
-works for any number of teams:
+Then set `memberCount` on each team from its members. This mutation updates 100
+teams per transaction and schedules itself for the next batch:
 
 ```ts title="convex/betterAuth/migrations.ts"
 import { v } from "convex/values";
@@ -76,12 +73,12 @@ export const backfillTeamMemberCount = internalMutation({
 npx convex run --component betterAuth migrations:backfillTeamMemberCount
 ```
 
-The command returns after the first batch, and the remaining batches run in the
-background. Each batch reads every member of its teams, so if teams have
-thousands of members each, lower `numItems` to stay within Convex's
+The command returns after the first batch, and later batches run in the
+background. Each batch reads every member of its teams, so lower `numItems` if
+teams have thousands of members, to stay within Convex's
 [transaction limits](https://docs.convex.dev/production/state/limits#transactions).
-Until the backfill finishes, if a team member limit is set, teams without
-`memberCount` reject new members. When every team has `memberCount`, regenerate
-the schema so it is required again, and deploy.
+Until the backfill finishes, teams without `memberCount` reject new members if a
+team member limit is set. Then regenerate the schema so `memberCount` is
+required again, and deploy.
 
 </div>

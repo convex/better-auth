@@ -3,7 +3,8 @@
 ### Update router config
 
 Set `expectAuth: true` on the `ConvexQueryClient` in your router. Without it,
-authenticated data from the server render is lost right after the first render.
+authenticated data from server-side rendering is lost as soon as the page first
+renders.
 
 Remove the unused `Wrap` provider if your router has one.
 

@@ -3,10 +3,10 @@
 ### Split out `createAuthOptions` function
 
 Move your Better Auth options into a separate `createAuthOptions` function that
-returns the typed options object, and pass the result to `betterAuth()`. With
-the options inside the `betterAuth()` call, the component had to run Better Auth
-to read them, which caused unnecessary logging and inaccurate error messages and
-required workarounds such as `optionsOnly` to disable logging.
+returns them as a typed object, and pass its result to `betterAuth()`. With the
+options inside the `betterAuth()` call, the component had to run Better Auth to
+read them, which caused unnecessary logs and inaccurate error messages, and
+required workarounds such as `optionsOnly`.
 
 ```ts title="convex/auth.ts"
 import {

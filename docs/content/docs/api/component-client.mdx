@@ -59,8 +59,8 @@ export const changePassword = mutation({
 
 Returns a user by their Better Auth user id. It doesn't check who is calling,
 and the user document includes fields such as the email address. Anyone can call
-a public query, so check the caller in your query and return only the fields the
-caller needs.
+a public query, so in your query, check the caller and return only the fields
+they need.
 
 ```ts
 import { query } from "./_generated/server";

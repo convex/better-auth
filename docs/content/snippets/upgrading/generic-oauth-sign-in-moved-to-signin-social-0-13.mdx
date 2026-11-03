@@ -2,11 +2,10 @@
 
 ### Generic OAuth sign-in moved to `signIn.social`
 
-Better Auth 1.7 removed the `genericOAuthClient()` client plugin and
-`authClient.signIn.oauth2()`. Remove `genericOAuthClient()` from your auth
-client, and sign in to Generic OAuth providers with
-`authClient.signIn.social()`, passing the `providerId` from your
-`genericOAuth()` config as `provider`.
+Better Auth 1.7 removed `authClient.signIn.oauth2()` and the
+`genericOAuthClient()` plugin, so remove the plugin from your auth client. Sign
+in to Generic OAuth providers with `authClient.signIn.social()`, passing the
+`providerId` from your `genericOAuth()` config as `provider`.
 
 ```ts title="auth-client.ts"
 import { genericOAuthClient } from "better-auth/client/plugins"; // [!code --]

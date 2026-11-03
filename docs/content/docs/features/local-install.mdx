@@ -261,9 +261,9 @@ Note that if an internal function is defined in a component, it will not be
 accessible from outside the component, so functions that need to run outside the
 component cannot be internal. While normally public functions are exposed to the
 internet, **Convex functions exported by a component are never exposed to the
-internet, even if they are public**. A public function in your app that calls a
-component function is exposed to the internet, so check the caller in the app
-function and return only the fields the caller needs.
+internet, even if they are public**. Public functions in your app are exposed
+even when they only call component functions, so check who is calling and return
+only the fields the caller needs.
 
 <Callout title="Return validators">
   If a function in a component is called from outside the component, the return
