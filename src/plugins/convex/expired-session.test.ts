@@ -73,7 +73,8 @@ describe("convex plugin JWT cookie for an expired session", () => {
     });
     expect(result.response).toBeNull();
     const jwtCookie = lastSetCookies(result.headers).get(JWT_COOKIE);
-    expect(jwtCookie?.value ?? "").toBe("");
-    expect(jwtCookie?.raw ?? "Max-Age=0").toMatch(/Max-Age=0/);
+    expect(jwtCookie).toBeDefined();
+    expect(jwtCookie!.value).toBe("");
+    expect(jwtCookie!.raw).toMatch(/Max-Age=0/);
   });
 });
