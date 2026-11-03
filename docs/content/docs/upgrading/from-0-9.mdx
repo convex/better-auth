@@ -3,10 +3,9 @@ title: Upgrading from 0.9
 description: Upgrade @convex-dev/better-auth from 0.9 to the latest version
 ---
 
-Everything needed to upgrade `@convex-dev/better-auth` from 0.9 to the current
-version. Work through the steps in order and deploy once. The exception is a
-Local Install project that uses organization teams and already has teams: it
-needs a second deploy, covered in [Regenerate schema](#regenerate-schema).
+Work through these steps in order, then deploy once. Local Install projects
+that use organization teams and already have teams deploy twice, as
+[Regenerate schema](#regenerate-schema) explains.
 
 ## Dependencies
 
@@ -46,8 +45,8 @@ needs a second deploy, covered in [Regenerate schema](#regenerate-schema).
 
 ## Server rendering
 
-The following steps are only necessary for apps using SSR (eg., Next.js,
-TanStack Start).
+These steps apply only to apps that use server-side rendering, such as
+Next.js and TanStack Start apps.
 
 <div className="fd-steps">
 
@@ -131,7 +130,7 @@ TanStack Start).
 
 ## Local Install
 
-The following steps are only necessary for apps using
+These steps apply only to apps that use
 [Local Install](/features/local-install).
 
 <div className="fd-steps">

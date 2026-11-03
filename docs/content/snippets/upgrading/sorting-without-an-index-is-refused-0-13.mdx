@@ -2,16 +2,16 @@
 
 ### Sorting on a field without an index fails
 
-A list sorted on a field no index covers now fails with an error. When an index
-would fix it, the error names that index. Before 0.13 these lists came back in
-creation order instead of the requested order. This affects lists where the
-caller picks the sort field, such as the admin plugin's `listUsers` sorted by
-`role` (or by `name` while filtering by `role`) and the organization plugin's
-`listMembers` sorted by `role`. Sorts that an index covers, including user lists
-sorted by `createdAt`, `email` or `name`, work as before. Sorting by `id` isn't
-supported.
+A list sorted on a field that no index covers now fails with an error. If an
+index would serve the sort, the error lists the fields of that index. Before
+0.13, these lists came back in creation order instead of the requested order.
+Lists where the caller picks the sort field are affected, such as the admin
+plugin's `listUsers` sorted by `role` (or by `name` while filtering by `role`)
+and the organization plugin's `listMembers` sorted by `role`. Sorts that an
+index covers, including user lists sorted by `createdAt`, `email` or `name`,
+work as before. Sorting by `id` isn't supported.
 
 With [Local Install](/features/local-install#adding-custom-indexes), you can add
-the index the error names.
+the index that the error describes.
 
 </div>

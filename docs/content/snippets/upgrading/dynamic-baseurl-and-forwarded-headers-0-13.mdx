@@ -2,20 +2,21 @@
 
 ### Dynamic `baseURL` and forwarded headers
 
-Better Auth 1.7 stops reading `x-forwarded-host` and `x-forwarded-proto` unless
-`advanced.trustedProxyHeaders` is set. The component's framework handlers
-(Next.js, TanStack Start) keep working without that option: when the original
-origin (scheme and host) is listed exactly in `trustedOrigins` or
-`allowedHosts`, the component sets the request URL and `host` header the auth
-request sees, which is what a dynamic `baseURL` with `allowedHosts` validates
-against.
+Better Auth 1.7 reads `x-forwarded-host` and `x-forwarded-proto` only when
+`advanced.trustedProxyHeaders` is set. The component's Next.js and TanStack
+Start handlers work without `trustedProxyHeaders`: when the original origin
+(scheme and host) is listed exactly in `trustedOrigins` or `allowedHosts`, the
+component sets the request URL and `host` header that Better Auth sees to the
+original origin. A dynamic `baseURL` with `allowedHosts` validates against the
+request URL and `host` header.
 
-If you front `.convex.site` with your own proxy, `advanced.trustedProxyHeaders`
-has no effect: the component sets the origin Better Auth sees on every request
-and replaces any `x-forwarded-host` and `x-forwarded-proto` it receives. To have
-Better Auth see your proxy's public origin, send it in
+If you put your own proxy in front of `.convex.site`,
+`advanced.trustedProxyHeaders` has no effect: the component sets the origin
+Better Auth sees on every request and replaces any `x-forwarded-host` and
+`x-forwarded-proto` headers it receives. To make Better Auth see your proxy's
+public origin, have your proxy send the public origin in
 `x-better-auth-forwarded-host` and `x-better-auth-forwarded-proto`, as the
-framework handlers do, and list that origin exactly in `trustedOrigins`. Apps
-with a static `baseURL` are not affected.
+framework handlers do, and list the public origin exactly in `trustedOrigins`.
+Apps with a static `baseURL` are not affected.
 
 </div>

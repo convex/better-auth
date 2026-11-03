@@ -33,16 +33,17 @@ in Convex.
 
 - #### Session cookie cache
 
-  Better Auth's `session.cookieCache` isn't supported with Convex. Sessions are
-  always read from the database. If it's enabled in your Better Auth options,
-  the Convex plugin turns it off and logs a warning.
+  Better Auth's `session.cookieCache` isn't supported with Convex, so sessions
+  are always read from the database. If your Better Auth options enable
+  `session.cookieCache`, the Convex plugin turns it off and logs a warning.
 
 - #### Id generation
 
-  Convex assigns document ids, so `advanced.database.generateId` has no effect
-  and shouldn't be set. Don't set it to `"uuid"`: on Better Auth 1.7 that stops
-  the single-use locks Better Auth takes through verification reservations from
-  being enforced. The Convex plugin logs a warning while it is set.
+  Convex assigns document ids, so `advanced.database.generateId` has no effect;
+  don't set it. On Better Auth 1.7, setting `generateId` to `"uuid"` also turns
+  off enforcement of verification reservations, the single-use locks Better Auth
+  takes on verification values. While `generateId` is `"uuid"`, the Convex
+  plugin logs a warning.
 
 ## Using server methods with `auth.api`
 

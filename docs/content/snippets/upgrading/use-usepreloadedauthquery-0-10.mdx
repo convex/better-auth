@@ -2,8 +2,9 @@
 
 ### Use `usePreloadedAuthQuery`
 
-`usePreloadedAuthQuery` replaces `usePreloadedQuery` as a drop-in - it ensures
-server rendered data is rendered until authentication is ready.
+Replace `usePreloadedQuery` with `usePreloadedAuthQuery`, which takes the same
+arguments and keeps rendering the server-rendered data until authentication is
+ready.
 
 ```tsx title="app/(auth)/(dashboard)/todo-list.tsx"
 import { usePreloadedAuthQuery } from "@convex-dev/better-auth/nextjs/client";

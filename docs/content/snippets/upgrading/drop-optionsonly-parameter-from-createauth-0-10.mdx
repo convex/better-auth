@@ -2,7 +2,8 @@
 
 ### Drop `optionsOnly` parameter from `createAuth`
 
-The `optionsOnly` parameter is no longer needed.
+Remove the `optionsOnly` parameter from `createAuth`, and remove the `logger`
+option that reads `optionsOnly`.
 
 ```ts title="convex/auth.ts"
 // [!code --:4]

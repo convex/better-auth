@@ -2,11 +2,11 @@
 
 ### Update router config
 
-Update the router to set `expectAuth: true` on the ConvexQueryClient - without
-this, authenticated data from server render is lost immediately after first
-render.
+Set `expectAuth: true` on the `ConvexQueryClient` in your router. Without
+`expectAuth`, authenticated data from the server render is lost right after the
+first render.
 
-Also drop the unused `Wrap` provider (if you have one).
+Remove the unused `Wrap` provider if your router has one.
 
 ```tsx title="src/router.tsx"
 export function getRouter() {

@@ -2,8 +2,8 @@
 
 ### Pass initial token to ConvexBetterAuthProvider
 
-Apps using Next.js or TanStack Start can pass an initial token to speed up
-client authentication.
+In Next.js and TanStack Start apps, pass an initial token to
+`ConvexBetterAuthProvider` so the client authenticates faster.
 
 <Tabs groupId="framework" items={["next-js", "tanstack-start"]} defaultValue="next-js" persist>
 <Tab value="next-js">
@@ -30,8 +30,8 @@ export function ConvexClientProvider({
 }
 ```
 
-Then fetch the initial token on the server from your root layout and pass it to
-the `ConvexClientProvider`.
+Then get the token on the server in your root layout and pass the token to
+`ConvexClientProvider`.
 
 ```tsx title="app/layout.tsx"
 import { getToken } from "@/lib/auth-server"; // [!code ++]

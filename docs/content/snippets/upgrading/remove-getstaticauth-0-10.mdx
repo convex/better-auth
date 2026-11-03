@@ -2,13 +2,13 @@
 
 ### Remove `getStaticAuth`
 
-Remove `getStaticAuth` in `convex/betterAuth/auth.ts` and replace it with a
-simple `createAuth`
+In `convex/betterAuth/auth.ts`, replace `getStaticAuth(createAuth)` with
+`createAuth({} as any)`.
 
 <Callout>
-  This file should _only_ have your `auth` export for schema generation, and no
-  other code. If this file is imported at runtime it will trigger errors due to
-  missing environment variables.
+  `convex/betterAuth/auth.ts` should contain _only_ the `auth` export for schema
+  generation. Importing the file at runtime causes errors from missing
+  environment variables.
 </Callout>
 
 ```ts title="convex/betterAuth/auth.ts"

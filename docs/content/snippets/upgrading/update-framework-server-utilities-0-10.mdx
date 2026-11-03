@@ -2,17 +2,14 @@
 
 ### Update framework server utilities
 
-Server utilities are provided for TanStack Start and Next.js to provide the same
-kind of set-it-and-forget-it auth management that you get in the client, on the
-server.
+The component provides server utilities for Next.js and TanStack Start that
+manage auth on the server, as the client does. The configuration takes explicit
+Convex URLs and validates them at runtime.
 
-The configuration requires explicit URLs for Convex with runtime validation,
-which should reduce environment variable confusion.
-
-Replace usage of previous versions of these functions with the new ones, eg.,
-`preloadQuery` with `preloadAuthQuery`, `fetchQuery` with `fetchAuthQuery`, etc.
-Note that the new functions only accept a function reference and arguments, a
-third option with configuration such as a token is not accepted or required.
+Replace the previous functions with the new ones, such as `preloadQuery` with
+`preloadAuthQuery` and `fetchQuery` with `fetchAuthQuery`. The new functions
+accept only a function reference and arguments; they don't accept a third
+options argument, such as a token, and don't need one.
 
 <Tabs groupId="framework" items={["next-js", "tanstack-start"]} defaultValue="next-js" persist>
 <Tab value="next-js">
