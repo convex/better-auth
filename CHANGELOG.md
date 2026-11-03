@@ -20,8 +20,9 @@
 - fix: the `host` header is set for exactly trusted original hosts so dynamic
   `baseURL` configs resolve without `advanced.trustedProxyHeaders`
 - fix: `AuthClient` type is structural so real auth clients are assignable again
-- breaking: the Convex plugin serves its OpenID discovery document directly; the
-  removed `oidcProvider` plugin's `oauthApplication`, `oauthAccessToken` and
+- breaking: the Convex plugin serves its OpenID discovery document directly and
+  no longer advertises `/oauth2/*` endpoints that nothing served; the removed
+  `oidcProvider` plugin's `oauthApplication`, `oauthAccessToken` and
   `oauthConsent` tables are no longer in the component schema (data is kept, see
   the Upgrading guide)
 - breaking: Convex plugin endpoint keys renamed to `getConvexToken`,

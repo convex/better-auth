@@ -154,7 +154,8 @@ export const convex = (opts: {
   jwksRotateOnTokenGenerationError?: boolean;
   /**
    * @param {BetterAuthOptions} options - Better Auth options. Not required,
-   * currently used to pass the basePath to the oidcProvider plugin.
+   * currently used to build the `jwks_uri` in the OpenID discovery document
+   * when Better Auth uses a non-default `basePath`.
    */
   options?: BetterAuthOptions;
 }) => {
@@ -374,48 +375,27 @@ export const convex = (opts: {
         async (ctx) => {
           // OpenID Connect discovery document for Convex's `domain`-style
           // auth provider (and anything else that discovers the issuer).
-          // Convex only reads `issuer` and `jwks_uri`, but discovery clients
-          // require the standard metadata fields to be present, so the shape
-          // the oidcProvider plugin produced before Better Auth 1.7 is kept.
-          const baseURL = ctx.context.baseURL;
+          // The plugin issues JWTs from `/convex/token` for an existing
+          // session; it is not an authorization server, so no authorization,
+          // token, userinfo, registration or end-session endpoint is
+          // advertised (nothing serves the `/oauth2/*` paths since Better
+          // Auth 1.7 removed the oidcProvider plugin). Convex reads only
+          // `issuer` and `jwks_uri`; the capability lists are the ones OpenID
+          // Connect Discovery requires.
           return ctx.json({
             issuer,
-            authorization_endpoint: `${baseURL}/oauth2/authorize`,
-            token_endpoint: `${baseURL}/oauth2/token`,
-            userinfo_endpoint: `${baseURL}/oauth2/userinfo`,
             jwks_uri: jwksUri,
-            registration_endpoint: `${baseURL}/oauth2/register`,
-            end_session_endpoint: `${baseURL}/oauth2/endsession`,
-            scopes_supported: ["openid", "profile", "email", "offline_access"],
-            response_types_supported: ["code"],
-            response_modes_supported: ["query"],
-            grant_types_supported: ["authorization_code", "refresh_token"],
-            acr_values_supported: [
-              "urn:mace:incommon:iap:silver",
-              "urn:mace:incommon:iap:bronze",
-            ],
+            response_types_supported: ["id_token"],
             subject_types_supported: ["public"],
             id_token_signing_alg_values_supported: [
               jwtOptions.jwks.keyPairConfig.alg,
             ],
-            token_endpoint_auth_methods_supported: [
-              "client_secret_basic",
-              "client_secret_post",
-              "none",
-            ],
-            code_challenge_methods_supported: ["S256"],
-            claims_supported: [
-              "sub",
-              "iss",
-              "aud",
-              "exp",
-              "nbf",
-              "iat",
-              "jti",
-              "email",
-              "email_verified",
-              "name",
-            ],
+            // Claims every token carries: the registered claims the jwt
+            // plugin always sets, plus `iat` and the session id this plugin
+            // adds. `nbf` and `jti` are set only if `definePayload` returns
+            // them, and the rest of the payload comes from `definePayload`
+            // (by default the user's fields), so none of those are listed.
+            claims_supported: ["sub", "iss", "aud", "exp", "iat", "sessionId"],
           });
         }
       ),

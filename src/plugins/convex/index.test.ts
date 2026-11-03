@@ -105,8 +105,23 @@ describe("convex plugin OpenID discovery document", () => {
       "https://deployment.convex.site/api/auth/convex/jwks"
     );
     expect(body.id_token_signing_alg_values_supported).toEqual(["EdDSA"]);
-    expect(body.response_types_supported).toEqual(["code"]);
+    expect(body.response_types_supported).toEqual(["id_token"]);
     expect(body.subject_types_supported).toEqual(["public"]);
+    expect(body.claims_supported).toEqual([
+      "sub",
+      "iss",
+      "aud",
+      "exp",
+      "iat",
+      "sessionId",
+    ]);
+    // The plugin is not an authorization server: it must not advertise
+    // endpoints nothing serves.
+    expect(body).not.toHaveProperty("authorization_endpoint");
+    expect(body).not.toHaveProperty("token_endpoint");
+    expect(body).not.toHaveProperty("userinfo_endpoint");
+    expect(body).not.toHaveProperty("registration_endpoint");
+    expect(body).not.toHaveProperty("end_session_endpoint");
   });
 
   it("uses endpoint keys that the jwt and oauth-provider plugins do not", () => {

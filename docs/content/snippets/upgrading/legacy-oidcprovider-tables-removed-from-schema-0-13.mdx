@@ -8,6 +8,13 @@ now serves that document itself, and the three tables the plugin contributed to
 the component schema (`oauthApplication`, `oauthAccessToken` and `oauthConsent`)
 are no longer declared.
 
+The discovery document now lists only the issuer, the JWKS URI and the token
+capabilities Convex and other relying parties need. The `/oauth2/*`
+authorization, token, userinfo, registration and end-session endpoints the old
+document advertised were never served by the Convex plugin. If your app is an
+OpenID provider through `@better-auth/oauth-provider`, that plugin serves its
+own discovery document.
+
 **Nothing is deleted by upgrading.** Convex keeps a table and its documents when
 it stops being declared in a schema; the table is simply no longer validated.
 For most apps these tables are empty, since the component never wrote to them.
