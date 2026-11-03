@@ -33,10 +33,8 @@ team: defineTable({
 ```
 
 Then backfill it from the existing team members. The mutation handles 100 teams
-per transaction and schedules itself for the next batch, so it stays within
-Convex's
-[transaction limits](https://docs.convex.dev/production/state/limits#transactions)
-however many teams there are:
+per transaction and schedules itself for the next batch, so the total number of
+teams doesn't matter:
 
 ```ts title="convex/betterAuth/migrations.ts"
 import { v } from "convex/values";
@@ -74,10 +72,12 @@ export const backfillTeamMemberCount = internalMutation({
 npx convex run --component betterAuth migrations:backfillTeamMemberCount
 ```
 
-The command returns after the first batch; the rest run in the background. Lower
-`numItems` if teams have thousands of members each. Until the backfill finishes,
-teams without a `memberCount` reject new members when a team member limit is
-set. Once every team has one, regenerate the schema so the field is required
-again.
+The command returns after the first batch; the rest run in the background. Each
+batch still reads every member of its teams, so lower `numItems` if teams have
+thousands of members each to stay within Convex's
+[transaction limits](https://docs.convex.dev/production/state/limits#transactions).
+Until the backfill finishes, teams without a `memberCount` reject new members
+when a team member limit is set. Once every team has one, regenerate the schema
+so the field is required again.
 
 </div>
