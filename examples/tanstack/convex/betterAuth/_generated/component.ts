@@ -184,6 +184,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "backupCodes"
                     | "userId"
                     | "verified"
+                    | "failedVerificationCount"
+                    | "lockedUntil"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -216,6 +218,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "privateKey"
                     | "createdAt"
                     | "expiresAt"
+                    | "alg"
+                    | "crv"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -306,6 +310,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             | {
                 data: {
                   backupCodes: string;
+                  failedVerificationCount?: null | number;
+                  lockedUntil?: null | number;
                   secret: string;
                   userId: string;
                   verified?: null | boolean;
@@ -314,7 +320,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               }
             | {
                 data: {
+                  alg?: null | string;
                   createdAt: number;
+                  crv?: null | string;
                   expiresAt?: null | number;
                   privateKey: string;
                   publicKey: string;
@@ -488,6 +496,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "backupCodes"
                     | "userId"
                     | "verified"
+                    | "failedVerificationCount"
+                    | "lockedUntil"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -520,6 +530,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "privateKey"
                     | "createdAt"
                     | "expiresAt"
+                    | "alg"
+                    | "crv"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -716,6 +728,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "backupCodes"
                     | "userId"
                     | "verified"
+                    | "failedVerificationCount"
+                    | "lockedUntil"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -748,6 +762,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "privateKey"
                     | "createdAt"
                     | "expiresAt"
+                    | "alg"
+                    | "crv"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -1071,6 +1087,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 model: "twoFactor";
                 set?: {
                   backupCodes?: string;
+                  failedVerificationCount?: null | number;
+                  lockedUntil?: null | number;
                   secret?: string;
                   userId?: string;
                   verified?: null | boolean;
@@ -1082,6 +1100,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "backupCodes"
                     | "userId"
                     | "verified"
+                    | "failedVerificationCount"
+                    | "lockedUntil"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -1109,7 +1129,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 increment: Record<string, number>;
                 model: "jwks";
                 set?: {
+                  alg?: null | string;
                   createdAt?: number;
+                  crv?: null | string;
                   expiresAt?: null | number;
                   privateKey?: string;
                   publicKey?: string;
@@ -1121,6 +1143,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "privateKey"
                     | "createdAt"
                     | "expiresAt"
+                    | "alg"
+                    | "crv"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -1346,6 +1370,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 model: "twoFactor";
                 update: {
                   backupCodes?: string;
+                  failedVerificationCount?: null | number;
+                  lockedUntil?: null | number;
                   secret?: string;
                   userId?: string;
                   verified?: null | boolean;
@@ -1357,6 +1383,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "backupCodes"
                     | "userId"
                     | "verified"
+                    | "failedVerificationCount"
+                    | "lockedUntil"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -1383,7 +1411,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             | {
                 model: "jwks";
                 update: {
+                  alg?: null | string;
                   createdAt?: number;
+                  crv?: null | string;
                   expiresAt?: null | number;
                   privateKey?: string;
                   publicKey?: string;
@@ -1395,6 +1425,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "privateKey"
                     | "createdAt"
                     | "expiresAt"
+                    | "alg"
+                    | "crv"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -1628,6 +1660,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 model: "twoFactor";
                 update: {
                   backupCodes?: string;
+                  failedVerificationCount?: null | number;
+                  lockedUntil?: null | number;
                   secret?: string;
                   userId?: string;
                   verified?: null | boolean;
@@ -1639,6 +1673,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "backupCodes"
                     | "userId"
                     | "verified"
+                    | "failedVerificationCount"
+                    | "lockedUntil"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -1665,7 +1701,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             | {
                 model: "jwks";
                 update: {
+                  alg?: null | string;
                   createdAt?: number;
+                  crv?: null | string;
                   expiresAt?: null | number;
                   privateKey?: string;
                   publicKey?: string;
@@ -1677,6 +1715,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "privateKey"
                     | "createdAt"
                     | "expiresAt"
+                    | "alg"
+                    | "crv"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:

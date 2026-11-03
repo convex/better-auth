@@ -75,6 +75,8 @@ export const tables = {
     backupCodes: v.string(),
     userId: v.string(),
     verified: v.optional(v.union(v.null(), v.boolean())),
+    failedVerificationCount: v.optional(v.union(v.null(), v.number())),
+    lockedUntil: v.optional(v.union(v.null(), v.number())),
   })
     .index("userId", ["userId"]),
   jwks: defineTable({
@@ -82,6 +84,8 @@ export const tables = {
     privateKey: v.string(),
     createdAt: v.number(),
     expiresAt: v.optional(v.union(v.null(), v.number())),
+    alg: v.optional(v.union(v.null(), v.string())),
+    crv: v.optional(v.union(v.null(), v.string())),
   }),
 };
 
