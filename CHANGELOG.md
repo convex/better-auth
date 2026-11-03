@@ -2,8 +2,12 @@
 
 ## Unreleased
 
-- fix: registerRoutes replaces an untrusted request origin with CONVEX_SITE_URL (GHSA-9qq3-v9g3-cxhw)
-- fix: the Convex JWT cookie is only issued for established sessions (GHSA-4qvm-r4pr-v3wg)
+## 0.12.7
+
+- fix: registerRoutes replaces an untrusted request origin with CONVEX_SITE_URL
+  (GHSA-9qq3-v9g3-cxhw)
+- fix: the Convex JWT cookie is only issued for established sessions
+  (GHSA-4qvm-r4pr-v3wg)
 
 ## 0.12.6
 
