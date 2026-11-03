@@ -132,6 +132,43 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+test.each(
+  ["initial", "rotation"].flatMap((phase) =>
+    [-1, 1].map((direction) => ({ phase, skew: direction * 60 * 60 * 1_000 }))
+  )
+)(
+  "accepts a fresh server token during $phase with client clock skew $skew",
+  async ({ phase, skew }) => {
+    const serverTime = Date.now();
+    const initialToken = createUnsignedJwt("session_1", 1_000);
+    const freshToken = createUnsignedJwt("session_1", 1_100);
+    state.sessionSignal = {
+      data: { session: { id: "session_1" } },
+      error: null,
+      isPending: false,
+    };
+    state.token.mockResolvedValue({ data: { token: freshToken }, error: null });
+    if (phase === "rotation") {
+      renderProvider(initialToken);
+      await waitFor(() => expect(state.observedTokens).toEqual([initialToken]));
+    }
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(serverTime + skew);
+    if (phase === "initial") {
+      renderProvider("");
+      await waitFor(() => expect(state.observedTokens).toEqual([freshToken]));
+    } else {
+      let rotated: string | null | undefined;
+      await act(async () => {
+        rotated = await state.fetchAccessToken?.({ forceRefreshToken: true });
+      });
+      expect(rotated).toBe(freshToken);
+    }
+    expect(state.token).toHaveBeenCalledTimes(1);
+    expect(state.clearAuth).not.toHaveBeenCalled();
+  }
+);
+
 test("keeps the initial JWT fetcher stable when Better Auth resolves the same session", async () => {
   const initialToken = createUnsignedJwt("session_1", 1_000);
   const refreshedToken = createUnsignedJwt("session_2", 1_100);

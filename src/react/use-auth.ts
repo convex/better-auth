@@ -7,6 +7,7 @@ import {
   TOKEN_RECOVERY_DELAY_MS,
   useProviderLifecycleEffect,
   getSessionIdFromToken,
+  hasTokenClaims,
   isUsableToken,
   getAuthErrorStatus,
   reportTokenRefreshIssue,
@@ -64,13 +65,25 @@ export function useUseAuthFromBetterAuth(
   }, [clearRecovery]);
   useProviderLifecycleEffect(() => {
     isProviderMountedRef.current = true;
+    const browserWindow =
+      typeof window !== "undefined" &&
+      typeof window.addEventListener === "function" &&
+      typeof window.removeEventListener === "function"
+        ? window
+        : null;
+    const browserDocument =
+      typeof document !== "undefined" &&
+      typeof document.addEventListener === "function" &&
+      typeof document.removeEventListener === "function"
+        ? document
+        : null;
     const onVisible = () => {
-      if (document.visibilityState === "visible") {
+      if (browserDocument?.visibilityState === "visible") {
         restartAuthentication();
       }
     };
-    window.addEventListener("online", restartAuthentication);
-    document.addEventListener("visibilitychange", onVisible);
+    browserWindow?.addEventListener("online", restartAuthentication);
+    browserDocument?.addEventListener("visibilitychange", onVisible);
     return () => {
       isProviderMountedRef.current = false;
       pendingTokenRef.current?.controller.abort(
@@ -78,8 +91,8 @@ export function useUseAuthFromBetterAuth(
       );
       pendingTokenRef.current = null;
       clearRecovery();
-      window.removeEventListener("online", restartAuthentication);
-      document.removeEventListener("visibilitychange", onVisible);
+      browserWindow?.removeEventListener("online", restartAuthentication);
+      browserDocument?.removeEventListener("visibilitychange", onVisible);
     };
   }, [clearRecovery, restartAuthentication]);
   return useMemo(
@@ -217,7 +230,10 @@ export function useUseAuthFromBetterAuth(
                     if (token) {
                       const tokenSessionId = getSessionIdFromToken(token);
                       if (
-                        isUsableToken(token) &&
+                        // A successful server response is authoritative. The
+                        // browser clock can be ahead of the JWT's expiry; let
+                        // Convex validate its signature and server-time expiry.
+                        hasTokenClaims(token) &&
                         (requestedSessionId == null ||
                           tokenSessionId === requestedSessionId)
                       ) {

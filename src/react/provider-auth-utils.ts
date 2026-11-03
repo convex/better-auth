@@ -8,7 +8,9 @@ export const TOKEN_REQUEST_TIMEOUT_MS = 5000;
 export const TOKEN_REFRESH_BUDGET_MS = 30000;
 export const TOKEN_RECOVERY_DELAY_MS = 10000;
 export const useProviderLifecycleEffect =
-  typeof window === "undefined" ? useEffect : useLayoutEffect;
+  typeof window === "undefined" || typeof document === "undefined"
+    ? useEffect
+    : useLayoutEffect;
 function getTokenPayload(token: unknown): JWTPayload | null {
   if (typeof token !== "string" || typeof globalThis.atob !== "function") {
     return null;
@@ -31,12 +33,15 @@ export function getSessionIdFromToken(token: unknown): string | null {
   const payload = getTokenPayload(token);
   return typeof payload?.sessionId === "string" ? payload.sessionId : null;
 }
-export function isUsableToken(token: unknown): token is string {
+export function hasTokenClaims(token: unknown): token is string {
   const payload = getTokenPayload(token);
   return (
-    typeof payload?.sessionId === "string" &&
-    typeof payload.exp === "number" &&
-    payload.exp > Date.now() / 1000
+    typeof payload?.sessionId === "string" && typeof payload.exp === "number"
+  );
+}
+export function isUsableToken(token: unknown): token is string {
+  return (
+    hasTokenClaims(token) && getTokenPayload(token)!.exp! > Date.now() / 1000
   );
 }
 export function getAuthErrorStatus(error: unknown): number | null {
