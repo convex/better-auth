@@ -147,5 +147,32 @@ describe("table-level indexes", () => {
         })
       ).toBe(2);
     });
+
+    it("rejects updateMany whose partial update makes two rows share a tuple", async () => {
+      const { adapter } = setup();
+      await adapter.create({
+        model: "compoundUnique",
+        data: { groupId: "g1", slot: "s1" },
+      });
+      await adapter.create({
+        model: "compoundUnique",
+        data: { groupId: "g2", slot: "s1" },
+      });
+      // Each row's new tuple (g3, s1) is free before the update, but the
+      // two rows collide with each other once both are written.
+      await expect(
+        adapter.updateMany({
+          model: "compoundUnique",
+          where: [{ field: "slot", value: "s1" }],
+          update: { groupId: "g3" },
+        })
+      ).rejects.toThrow("compoundUnique groupId_slot already exists");
+      // The mutation is transactional, so neither row was changed.
+      const rows = await adapter.findMany<{ groupId: string }>({
+        model: "compoundUnique",
+        where: [{ field: "slot", value: "s1" }],
+      });
+      expect(rows.map((row) => row.groupId).sort()).toEqual(["g1", "g2"]);
+    });
   });
 });
