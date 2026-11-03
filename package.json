@@ -145,7 +145,6 @@
     "common-tags": "^1.8.2",
     "convex-helpers": "^0.1.128",
     "jose": "^6.1.0",
-    "remeda": "^2.32.0",
     "semver": "^7.7.3",
     "type-fest": "^5.0.0",
     "zod": "^4.0.0"

@@ -35,6 +35,7 @@
   different session without a sign-in path (multi-session `setActive`, admin
   impersonation, email verification auto sign-in), so a cached JWT for the
   previous account isn't served with `jwtCache`
+- chore: drop the unused `remeda` dependency
 
 ## 0.12.7
 
