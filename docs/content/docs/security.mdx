@@ -1,6 +1,6 @@
 ---
 title: Security
-description: Supported versions, known issues in older versions, and advisories
+description: Supported versions, older versions, and advisories
 ---
 
 ## Supported versions
@@ -11,28 +11,23 @@ Better Auth's own
 Fixes, including security fixes, ship in the latest version. See
 [Upgrading](/upgrading) for how to update from your current version to latest.
 
-## Known issues and workarounds for older versions
+## Older versions
 
-### 0.10 through 0.12: Magic Link with social or Generic OAuth sign-in
+Older versions of the component use older Better Auth versions, which may be
+affected by Better Auth advisories fixed in later releases. Check
+[Better Auth's advisories](https://github.com/better-auth/better-auth/security/advisories)
+against the Better Auth version your component version uses:
 
-Versions 0.10 through 0.12 use Better Auth versions affected by
-[GHSA-965c-763c-88jm](https://github.com/advisories/GHSA-965c-763c-88jm), a
-critical issue for apps that use Magic Link together with social or Generic
-OAuth sign-in. It's fixed in Better Auth 1.7.7. The latest version of the
-component requires Better Auth 1.7.14 or later.
+| Component | Better Auth     |
+| --------- | --------------- |
+| 0.9       | 1.3             |
+| 0.10      | 1.4             |
+| 0.11      | 1.5             |
+| 0.12      | 1.6             |
+| Latest    | 1.7.14 or later |
 
-Workaround: set `storeToken: "hashed"` on the Magic Link plugin and leave the
-global `verification.storeIdentifier` unset or set to `"plain"`, or turn off
-Magic Link or social and Generic OAuth sign-in.
-
-### 0.9: Two Factor with the session cookie cache
-
-Version 0.9 uses Better Auth 1.3, which is affected by
-[GHSA-xg6x-h9c9-2m83](https://github.com/advisories/GHSA-xg6x-h9c9-2m83): with
-the Two Factor plugin and `session.cookieCache` enabled, a session can be cached
-as valid before the second factor is verified.
-
-Workaround: turn off `session.cookieCache`.
+Where a version accepts a range, you can install the latest Better Auth patch in
+that range. Otherwise, upgrade the component to the latest version.
 
 ## Advisories
 
@@ -41,6 +36,8 @@ Advisories for `@convex-dev/better-auth` itself are published on
 
 | Advisory                                                                                                                                                                                       | Severity | Fixed in |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
+| [GHSA-4qvm-r4pr-v3wg](https://github.com/convex/better-auth/security/advisories/GHSA-4qvm-r4pr-v3wg): Convex JWT issued on password sign-in before two-factor authentication completes         | High     | 0.12.7   |
+| [GHSA-9qq3-v9g3-cxhw](https://github.com/convex/better-auth/security/advisories/GHSA-9qq3-v9g3-cxhw): emailed links can still use a caller-chosen host with a dynamic `baseURL`                | Medium   | 0.12.7   |
 | [GHSA-j8qq-g9pm-v3c2](https://github.com/convex/better-auth/security/advisories/GHSA-j8qq-g9pm-v3c2): cross-domain plugin can deliver a session token to a trusted origin an attacker controls | High     | 0.12.6   |
 | [GHSA-pgx2-m66h-x29f](https://github.com/convex/better-auth/security/advisories/GHSA-pgx2-m66h-x29f): emailed links can point at an attacker's host with a dynamic `baseURL`                   | Medium   | 0.12.6   |
 
