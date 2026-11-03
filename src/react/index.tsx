@@ -1,5 +1,6 @@
 import type { PropsWithChildren, ReactNode } from "react";
-import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useCallback, useEffect } from "react";
+import { useUseAuthFromBetterAuth } from "./use-auth.js";
 import type { AuthTokenFetcher } from "convex/browser";
 import {
   Authenticated,
@@ -96,78 +97,6 @@ export function ConvexBetterAuthProvider({
     <ConvexProviderWithAuth client={client} useAuth={useBetterAuth}>
       <>{children}</>
     </ConvexProviderWithAuth>
-  );
-}
-
-let initialTokenUsed = false;
-
-function useUseAuthFromBetterAuth(
-  authClient: AuthClient,
-  initialToken?: string | null
-) {
-  const [cachedToken, setCachedToken] = useState<string | null>(
-    initialTokenUsed ? null : (initialToken ?? null)
-  );
-  const pendingTokenRef = useRef<Promise<string | null> | null>(null);
-  useEffect(() => {
-    if (!initialTokenUsed) {
-      initialTokenUsed = true;
-    }
-  }, []);
-
-  return useMemo(
-    () =>
-      function useAuthFromBetterAuth() {
-        const { data: session, isPending: isSessionPending } =
-          authClient.useSession();
-        const sessionId = session?.session?.id;
-        useEffect(() => {
-          if (!session && !isSessionPending && cachedToken) {
-            setCachedToken(null);
-          }
-        }, [session, isSessionPending]);
-        const fetchAccessToken = useCallback(
-          async ({
-            forceRefreshToken = false,
-          }: { forceRefreshToken?: boolean } = {}) => {
-            if (cachedToken && !forceRefreshToken) {
-              return cachedToken;
-            }
-            if (!forceRefreshToken && pendingTokenRef.current) {
-              return pendingTokenRef.current;
-            }
-            pendingTokenRef.current = authClient.convex
-              .token({ fetchOptions: { throw: false } })
-              .then(({ data }) => {
-                const token = data?.token || null;
-                setCachedToken(token);
-                return token;
-              })
-              .catch(() => {
-                setCachedToken(null);
-                return null;
-              })
-              .finally(() => {
-                pendingTokenRef.current = null;
-              });
-            return pendingTokenRef.current;
-          },
-          // Build a new fetchAccessToken to trigger setAuth() whenever the
-          // session changes.
-          // eslint-disable-next-line react-hooks/exhaustive-deps
-          [sessionId]
-        );
-        return useMemo(
-          () => ({
-            isLoading: isSessionPending && !cachedToken,
-            isAuthenticated: Boolean(session?.session) || cachedToken !== null,
-            fetchAccessToken,
-          }),
-          // eslint-disable-next-line react-hooks/exhaustive-deps
-          [isSessionPending, sessionId, fetchAccessToken, cachedToken]
-        );
-      },
-    [authClient]
   );
 }
 
