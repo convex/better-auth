@@ -10,9 +10,6 @@ import {
 import type { FunctionReference } from "convex/server";
 import type { EmptyObject } from "convex-helpers";
 
-// Better Auth client calls resolve to a better-fetch result (`{ data, error }`)
-// or, with `fetchOptions.throw`, to the bare payload. The component narrows
-// the result itself, so client method types here only fix the arguments.
 type FetchResult<T> = {
   data?: T | null;
   error?: unknown;
@@ -22,11 +19,6 @@ type FetchResult<T> = {
  * The parts of a Better Auth client created with the `convexClient()` plugin
  * that this package uses. Any `createAuthClient()` result that includes
  * `convexClient()` satisfies it.
- *
- * This is described structurally rather than derived from `createAuthClient`
- * over a plugin union: Better Auth 1.7's endpoint inference collapses to
- * `never` for a union that includes the base `BetterAuthClientPlugin`, which
- * made no real client assignable to the previous type.
  */
 export type AuthClient = {
   useSession: () => {
