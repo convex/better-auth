@@ -1063,6 +1063,12 @@ test.each(["same-token", "empty-response", "two-segment", "four-segment"])(
     expect(settled).toHaveBeenCalledWith(freshToken);
     expect(state.clearAuth).not.toHaveBeenCalled();
     expect(state.setAuth).toHaveBeenCalledTimes(1);
+    if (response === "two-segment" || response === "four-segment") {
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        "[ConvexBetterAuthProvider] token refresh retrying",
+        expect.objectContaining({ kind: "invalid-token", status: null })
+      );
+    }
   }
 );
 

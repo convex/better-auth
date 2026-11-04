@@ -238,11 +238,12 @@ export function useUseAuthFromBetterAuth(
                     const token = data?.token || null;
                     if (token) {
                       const tokenSessionId = getSessionIdFromToken(token);
+                      const validClaims = hasTokenClaims(token);
                       if (
                         // A successful server response is authoritative. The
                         // browser clock can be ahead of the JWT's expiry; let
                         // Convex validate its signature and server-time expiry.
-                        hasTokenClaims(token) &&
+                        validClaims &&
                         (requestedSessionId == null ||
                           tokenSessionId === requestedSessionId)
                       ) {
@@ -255,10 +256,9 @@ export function useUseAuthFromBetterAuth(
                         // and stops future refreshes on scheduled rotation.
                         retryKind = "unchanged-token";
                       } else {
-                        retryKind =
-                          tokenSessionId !== requestedSessionId
-                            ? "session-mismatch"
-                            : "invalid-token";
+                        retryKind = validClaims
+                          ? "session-mismatch"
+                          : "invalid-token";
                         // Do not adopt another account's JWT. Ask Better Auth
                         // to update its authoritative session, which cancels
                         // this flight and starts the new session's setAuth.
