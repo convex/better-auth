@@ -85,9 +85,9 @@ type RegisterRoutesLazyOptions = {
   cors?: RouteCorsOptions;
 };
 
-// Hosts named exactly in trustedOrigins (and, with a dynamic baseURL, in
-// allowedHosts). Wildcard patterns and non-http(s) entries are excluded.
-const exactTrustedHosts = async (
+// Origins the app trusts exactly (scheme + host): non-wildcard http(s)
+// entries in trustedOrigins and, with a dynamic baseURL, in allowedHosts.
+const exactTrustedOrigins = async (
   auth: {
     $context: Promise<{
       trustedOrigins?: string[];
@@ -106,44 +106,70 @@ const exactTrustedHosts = async (
       origins.push(...resolved);
     }
   }
-  const hosts = new Set<string>();
+  const trusted = new Set<string>();
   for (const origin of origins) {
     if (typeof origin !== "string" || origin.includes("*")) {
       continue;
     }
-    try {
-      const url = new URL(origin);
-      if (url.protocol === "http:" || url.protocol === "https:") {
-        hosts.add(url.host.toLowerCase());
-      }
-    } catch {
-      // not a URL
+    const parsed = parseHttpOrigin(origin);
+    if (parsed) {
+      trusted.add(parsed);
     }
   }
-  return hosts;
+  return trusted;
 };
 
-// The framework proxy handlers send the original host and protocol in
-// x-better-auth-forwarded-* headers. Restore them into x-forwarded-* only
-// when the host is one the app lists exactly in trustedOrigins and the
-// protocol is http or https. Both are restored or neither is.
-const restoreOriginalForwardedHeaders = (
+// Normalized `scheme://host` for an http(s) URL, or null.
+const parseHttpOrigin = (value: string) => {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    return url.origin === "null" ? null : url.origin;
+  } catch {
+    return null;
+  }
+};
+
+// Set the request URL, `host`, `x-forwarded-host` and `x-forwarded-proto` to
+// a single origin Better Auth may build links from: the browser-facing origin
+// a framework proxy handler sent in x-better-auth-forwarded-* if the app
+// trusts it exactly, else the request's own origin if trusted exactly, else
+// the deployment's site URL. A self-hosted backend passes a client's `Host`
+// and x-forwarded-* through and builds `request.url` from them, so none of
+// those can be trusted on their own.
+const normalizeRequestOrigin = (
   request: Request,
-  trustedHosts: Set<string>
+  trustedOrigins: Set<string>
 ) => {
-  const originalHost = request.headers.get("x-better-auth-forwarded-host");
-  const originalProto = request.headers.get("x-better-auth-forwarded-proto");
-  if (
-    !originalHost ||
-    !trustedHosts.has(originalHost.toLowerCase()) ||
-    (originalProto !== "http" && originalProto !== "https")
-  ) {
+  const url = new URL(request.url);
+  const fromProxyHandler = parseHttpOrigin(
+    `${request.headers.get("x-better-auth-forwarded-proto")}://${request.headers.get("x-better-auth-forwarded-host")}`
+  );
+  const ownOrigin = parseHttpOrigin(url.origin);
+  const origin =
+    (fromProxyHandler && trustedOrigins.has(fromProxyHandler)
+      ? fromProxyHandler
+      : null) ??
+    (ownOrigin && trustedOrigins.has(ownOrigin) ? ownOrigin : null) ??
+    parseHttpOrigin(process.env.CONVEX_SITE_URL ?? "") ??
+    ownOrigin;
+  if (!origin) {
     return request;
   }
+  const target = new URL(origin);
   const headers = new Headers(request.headers);
-  headers.set("x-forwarded-host", originalHost);
-  headers.set("x-forwarded-proto", originalProto);
-  return new Request(request, { headers });
+  headers.set("host", target.host);
+  headers.set("x-forwarded-host", target.host);
+  headers.set("x-forwarded-proto", target.protocol.slice(0, -1));
+  return new Request(`${origin}${url.pathname}${url.search}`, {
+    method: request.method,
+    headers,
+    body: request.body,
+    // @ts-expect-error - duplex is required for streaming request bodies in modern fetch
+    duplex: "half",
+  });
 };
 
 /**
@@ -434,9 +460,9 @@ export const createClient = <
           console.log("request headers", request.headers);
         }
         const auth = createAuth(ctx as any);
-        const normalizedRequest = restoreOriginalForwardedHeaders(
+        const normalizedRequest = normalizeRequestOrigin(
           request,
-          await exactTrustedHosts(auth, request)
+          await exactTrustedOrigins(auth, request)
         );
         const response = await auth.handler(normalizedRequest);
         if (config?.verbose) {
@@ -557,9 +583,9 @@ export const createClient = <
           console.log("request headers", request.headers);
         }
         const auth = createAuth(ctx as any);
-        const normalizedRequest = restoreOriginalForwardedHeaders(
+        const normalizedRequest = normalizeRequestOrigin(
           request,
-          await exactTrustedHosts(auth, request)
+          await exactTrustedOrigins(auth, request)
         );
         const response = await auth.handler(normalizedRequest);
         if (config?.verbose) {

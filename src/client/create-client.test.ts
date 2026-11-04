@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { httpRouter } from "convex/server";
 import { createClient } from "./create-client.js";
 import type { TrustedOriginsOption } from "../utils/index.js";
@@ -110,10 +110,17 @@ describe("createClient route registration", () => {
     expect(createAuth).toHaveBeenCalledTimes(2);
   });
 
-  describe("forwarded host restore", () => {
+  describe("request origin normalization", () => {
+    const SITE = "https://deployment.convex.site";
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
     const callHandler = async (
       trustedOrigins: TrustedOriginsOption,
-      headers: Record<string, string>
+      headers: Record<string, string>,
+      init: { url?: string; method?: "GET" | "POST"; body?: string } = {}
     ) => {
       const client = createClient(component);
       const http = httpRouter();
@@ -124,66 +131,138 @@ describe("createClient route registration", () => {
         $context: Promise.resolve({ options: { trustedOrigins } }),
       }));
       client.registerRoutes(http, createAuth);
-      const getHandler = getRouteHandler(http, "/api/auth/test", "GET");
+      const method = init.method ?? "GET";
+      const getHandler = getRouteHandler(http, "/api/auth/test", method);
       expect(getHandler).toBeTruthy();
       await getHandler!._handler(
         {},
-        new Request("https://deployment.convex.site/api/auth/test", {
-          method: "GET",
+        new Request(init.url ?? `${SITE}/api/auth/test?x=1`, {
+          method,
           headers: { host: "deployment.convex.site", ...headers },
+          body: init.body,
         })
       );
       const forwarded = handler.mock.calls[0]?.[0] as Request;
       expect(forwarded).toBeInstanceOf(Request);
-      return forwarded.headers;
+      return forwarded;
     };
 
-    it("restores the original host when it is an exact trusted origin", async () => {
-      const headers = await callHandler(["https://app.example.com"], {
+    const originOf = (request: Request) => ({
+      url: request.url,
+      host: request.headers.get("host"),
+      forwardedHost: request.headers.get("x-forwarded-host"),
+      forwardedProto: request.headers.get("x-forwarded-proto"),
+    });
+
+    it("restores an original origin that is exactly trusted", async () => {
+      const request = await callHandler(["https://app.example.com"], {
         "x-forwarded-host": "deployment.convex.site",
         "x-forwarded-proto": "https",
         "x-better-auth-forwarded-host": "app.example.com",
         "x-better-auth-forwarded-proto": "https",
       });
-      expect(headers.get("x-forwarded-host")).toBe("app.example.com");
-      expect(headers.get("x-forwarded-proto")).toBe("https");
+      expect(originOf(request)).toEqual({
+        url: "https://app.example.com/api/auth/test?x=1",
+        host: "app.example.com",
+        forwardedHost: "app.example.com",
+        forwardedProto: "https",
+      });
     });
 
-    it("ignores the original host when it only matches a wildcard", async () => {
-      const headers = await callHandler(
+    it("requires the forwarded scheme to match the trusted origin", async () => {
+      vi.stubEnv("CONVEX_SITE_URL", SITE);
+      const httpsOnly = await callHandler(["https://app.example.com"], {
+        "x-better-auth-forwarded-host": "app.example.com",
+        "x-better-auth-forwarded-proto": "http",
+      });
+      expect(originOf(httpsOnly).url).toBe(`${SITE}/api/auth/test?x=1`);
+      const httpListed = await callHandler(
+        ["https://app.example.com", "http://app.example.com"],
+        {
+          "x-better-auth-forwarded-host": "app.example.com",
+          "x-better-auth-forwarded-proto": "http",
+        }
+      );
+      expect(originOf(httpListed).url).toBe(
+        "http://app.example.com/api/auth/test?x=1"
+      );
+    });
+
+    it("ignores an original host that only matches a wildcard", async () => {
+      vi.stubEnv("CONVEX_SITE_URL", SITE);
+      const request = await callHandler(
         ["https://app.example.com", "https://*.previews.example.app"],
         {
-          "x-forwarded-host": "deployment.convex.site",
-          "x-forwarded-proto": "https",
           "x-better-auth-forwarded-host": "branch.previews.example.app",
           "x-better-auth-forwarded-proto": "https",
         }
       );
-      expect(headers.get("x-forwarded-host")).toBe("deployment.convex.site");
-      expect(headers.get("x-forwarded-proto")).toBe("https");
+      expect(originOf(request).url).toBe(`${SITE}/api/auth/test?x=1`);
     });
 
     it("ignores a trusted original host without a valid protocol", async () => {
-      const headers = await callHandler(["https://app.example.com"], {
-        "x-forwarded-host": "deployment.convex.site",
-        "x-forwarded-proto": "https",
+      vi.stubEnv("CONVEX_SITE_URL", SITE);
+      const request = await callHandler(["https://app.example.com"], {
         "x-better-auth-forwarded-host": "app.example.com",
       });
-      expect(headers.get("x-forwarded-host")).toBe("deployment.convex.site");
-      expect(headers.get("x-forwarded-proto")).toBe("https");
+      expect(originOf(request).host).toBe("deployment.convex.site");
     });
 
-    it("leaves incoming x-forwarded-* headers as they arrived", async () => {
-      const headers = await callHandler(["https://app.example.com"], {
-        "x-forwarded-host": "deployment.convex.site",
-        "x-forwarded-proto": "https",
+    it("replaces client-sent host and x-forwarded-* with the site URL", async () => {
+      // The self-hosted backend passes these through and builds request.url
+      // from them, so none of them can be trusted on their own.
+      vi.stubEnv("CONVEX_SITE_URL", SITE);
+      const request = await callHandler(
+        ["https://app.example.com"],
+        {
+          host: "evil.example",
+          "x-forwarded-host": "evil2.example",
+          "x-forwarded-proto": "http",
+        },
+        { url: "http://evil2.example/api/auth/test?x=1" }
+      );
+      expect(originOf(request)).toEqual({
+        url: `${SITE}/api/auth/test?x=1`,
+        host: "deployment.convex.site",
+        forwardedHost: "deployment.convex.site",
+        forwardedProto: "https",
       });
-      expect(headers.get("x-forwarded-host")).toBe("deployment.convex.site");
-      expect(headers.get("x-forwarded-proto")).toBe("https");
+    });
+
+    it("keeps the request's own origin when it is exactly trusted", async () => {
+      vi.stubEnv("CONVEX_SITE_URL", SITE);
+      const request = await callHandler(
+        ["https://auth.example.com"],
+        { host: "auth.example.com" },
+        { url: "https://auth.example.com/api/auth/test?x=1" }
+      );
+      expect(originOf(request)).toEqual({
+        url: "https://auth.example.com/api/auth/test?x=1",
+        host: "auth.example.com",
+        forwardedHost: "auth.example.com",
+        forwardedProto: "https",
+      });
+    });
+
+    it("preserves method, body and other headers", async () => {
+      const request = await callHandler(
+        ["https://app.example.com"],
+        {
+          "content-type": "application/json",
+          cookie: "a=b",
+          "x-better-auth-forwarded-host": "app.example.com",
+          "x-better-auth-forwarded-proto": "https",
+        },
+        { method: "POST", body: JSON.stringify({ email: "a@b.co" }) }
+      );
+      expect(request.method).toBe("POST");
+      expect(request.headers.get("cookie")).toBe("a=b");
+      expect(request.headers.get("content-type")).toBe("application/json");
+      expect(await request.json()).toEqual({ email: "a@b.co" });
     });
 
     it("honors exact origins returned by a trustedOrigins function", async () => {
-      const headers = await callHandler(
+      const request = await callHandler(
         (request?: Request) =>
           request?.headers.get("x-test-tenant") === "acme"
             ? ["https://acme.example.com"]
@@ -194,7 +273,7 @@ describe("createClient route registration", () => {
           "x-better-auth-forwarded-proto": "https",
         }
       );
-      expect(headers.get("x-forwarded-host")).toBe("acme.example.com");
+      expect(originOf(request).host).toBe("acme.example.com");
     });
   });
 

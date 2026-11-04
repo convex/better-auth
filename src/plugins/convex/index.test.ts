@@ -12,7 +12,7 @@ const getJwtSetCookieMatcher = () => {
   const matcher = afterHooks.find((hook) => {
     return (
       hook.matcher({
-        path: "/sign-in/email",
+        path: "/update-session",
         context: { session: { id: "s1" } },
       } as unknown as Parameters<typeof hook.matcher>[0]) &&
       !hook.matcher({
@@ -51,5 +51,28 @@ describe("convex plugin JWT cookie refresh matcher", () => {
     };
     expect(matcher(withSessionCtx as unknown as MatcherContext)).toBe(true);
     expect(matcher(withoutSessionCtx as unknown as MatcherContext)).toBe(false);
+  });
+
+  it("never matches requests that create a new session", () => {
+    const matcher = getJwtSetCookieMatcher();
+    type MatcherContext = Parameters<typeof matcher>[0];
+    for (const path of [
+      "/sign-in/email",
+      "/sign-in/username",
+      "/sign-in/phone-number",
+      "/sign-in/social",
+      "/sign-up/email",
+      "/callback/github",
+      "/magic-link/verify",
+      "/email-otp/verify-email",
+      "/phone-number/verify",
+      "/siwe/verify",
+    ]) {
+      const ctx = {
+        path,
+        context: { session: null, newSession: { session: { id: "s1" } } },
+      };
+      expect(matcher(ctx as unknown as MatcherContext), path).toBe(false);
+    }
   });
 });

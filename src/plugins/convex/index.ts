@@ -316,22 +316,18 @@ export const convex = (opts: {
       after: [
         ...normalizeAfterHooks(oidcProvider.hooks.after),
         {
+          // Only refresh the Convex JWT cookie for an established session.
+          // Never sign one for a new session: a later plugin's after hook can
+          // still cancel the sign-in and delete it (twoFactor does, while the
+          // second factor is pending). Sign-in paths clear the cookie below
+          // instead; /convex/token and the next /get-session set it again.
           matcher: (ctx) => {
             return Boolean(
-              ctx.path?.startsWith("/sign-in") ||
-                ctx.path?.startsWith("/sign-up") ||
-                ctx.path?.startsWith("/callback") ||
-                ctx.path?.startsWith("/oauth2/callback") ||
-                ctx.path?.startsWith("/magic-link/verify") ||
-                ctx.path?.startsWith("/email-otp/verify-email") ||
-                ctx.path?.startsWith("/phone-number/verify") ||
-                ctx.path?.startsWith("/siwe/verify") ||
-                ctx.path?.startsWith("/update-session") ||
-                (ctx.path?.startsWith("/get-session") && ctx.context.session)
+              ctx.path?.startsWith("/update-session") ||
+              (ctx.path?.startsWith("/get-session") && ctx.context.session)
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
-            // Set jwt cookie at login for authenticated ssr
             const originalSession = ctx.context.session;
             try {
               ctx.context.session =
@@ -350,8 +346,7 @@ export const convex = (opts: {
               ctx.setCookie(jwtCookie.name, token, jwtCookie.attributes);
               // eslint-disable-next-line @typescript-eslint/no-unused-vars
             } catch (_err) {
-              // no-op, some sign-in calls (eg., when redirecting to 2fa)
-              // 401 here
+              // no-op
             }
             ctx.context.session = originalSession;
           }),
@@ -359,9 +354,17 @@ export const convex = (opts: {
         {
           matcher: (ctx) => {
             return Boolean(
+              ctx.path?.startsWith("/sign-in") ||
+              ctx.path?.startsWith("/sign-up") ||
+              ctx.path?.startsWith("/callback") ||
+              ctx.path?.startsWith("/oauth2/callback") ||
+              ctx.path?.startsWith("/magic-link/verify") ||
+              ctx.path?.startsWith("/email-otp/verify-email") ||
+              ctx.path?.startsWith("/phone-number/verify") ||
+              ctx.path?.startsWith("/siwe/verify") ||
               ctx.path?.startsWith("/sign-out") ||
-                ctx.path?.startsWith("/delete-user") ||
-                (ctx.path?.startsWith("/get-session") && !ctx.context.session)
+              ctx.path?.startsWith("/delete-user") ||
+              (ctx.path?.startsWith("/get-session") && !ctx.context.session)
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
