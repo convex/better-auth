@@ -29,11 +29,11 @@ describe("verifyCrossDomainOneTimeToken", () => {
     const session = db.session[0]!;
     const ctx = await auth.$context;
     // Issue a token the way the after hook does.
-    const issue = async (identifier: string) =>
+    const issue = async (identifier: string, ttlMs = 60_000) =>
       ctx.internalAdapter.createVerificationValue({
         identifier,
         value: session.token as string,
-        expiresAt: new Date(Date.now() + 60_000),
+        expiresAt: new Date(Date.now() + ttlMs),
       });
     const verify = async (token: string) => {
       const response = await auth.handler(
@@ -71,6 +71,14 @@ describe("verifyCrossDomainOneTimeToken", () => {
     expect((await verify("nope")).status).toBe(400);
     await issue("one-time-token:tok");
     expect((await verify("tok")).status).toBe(400);
+  });
+
+  it("rejects an expired token", async () => {
+    const { issue, verify } = await setup();
+    await issue("cross-domain-ott:tok", -1000);
+    const result = await verify("tok");
+    expect(result.status).toBe(400);
+    expect(result.body.message).toBe("Invalid token");
   });
 
   it("rejects a token for an expired session without setting a cookie", async () => {
