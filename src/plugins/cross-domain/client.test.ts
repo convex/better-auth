@@ -159,34 +159,34 @@ describe("crossDomainClient", () => {
   }
 
   describe("getSessionData", () => {
-    it("returns null when storage is empty", () => {
+    it("returns null when storage is empty", async () => {
       const actions = getActions();
-      expect(actions.getSessionData()).toBeNull();
+      expect(await actions.getSessionData()).toBeNull();
     });
 
-    it("returns null for empty object in storage", () => {
+    it("returns null for empty object in storage", async () => {
       storage.set(localCacheName, "{}");
       const actions = getActions();
-      expect(actions.getSessionData()).toBeNull();
+      expect(await actions.getSessionData()).toBeNull();
     });
 
-    it("returns parsed session data", () => {
+    it("returns parsed session data", async () => {
       const sessionData = { session: { id: "123" }, user: { name: "test" } };
       storage.set(localCacheName, JSON.stringify(sessionData));
       const actions = getActions();
-      expect(actions.getSessionData()).toEqual(sessionData);
+      expect(await actions.getSessionData()).toEqual(sessionData);
     });
 
-    it("returns null for stored 'null' string", () => {
+    it("returns null for stored 'null' string", async () => {
       storage.set(localCacheName, "null");
       const actions = getActions();
-      expect(actions.getSessionData()).toBeNull();
+      expect(await actions.getSessionData()).toBeNull();
     });
 
-    it("returns null for corrupt JSON in storage", () => {
+    it("returns null for corrupt JSON in storage", async () => {
       storage.set(localCacheName, "not-valid-json");
       const actions = getActions();
-      expect(actions.getSessionData()).toBeNull();
+      expect(await actions.getSessionData()).toBeNull();
     });
   });
 
