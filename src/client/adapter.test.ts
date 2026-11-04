@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { convexTest } from "convex-test";
 import { betterAuth } from "better-auth/minimal";
 import { magicLink } from "better-auth/plugins/magic-link";
@@ -260,6 +260,47 @@ describe("Better Auth Adapter Tests", async () => {
       expect(await internalAdapter.reserveVerificationValue(reservation)).toBe(
         true
       );
+    });
+
+    it("reserves on a renamed verification model", async () => {
+      // Better Auth passes the physical table name as `model` and the
+      // canonical name as `modelKey`; the reservation path keys off the latter.
+      const runMutation = vi.fn(async (_fn: unknown, args: any) => ({
+        _id: "row",
+        ...args.input.data,
+      }));
+      const runQuery = vi.fn(async (_fn: unknown, _args: any) => null);
+      const { adapter } = await betterAuth({
+        baseURL: "http://localhost:3000",
+        secret: "test-secret-at-least-thirty-two-characters-long",
+        database: baseProfileClient.adapter({ runMutation, runQuery } as any),
+        verification: { modelName: "verification_custom" },
+        logger: { disabled: true },
+      }).$context;
+      await adapter.create({
+        model: "verification",
+        data: {
+          id: "reservation",
+          identifier: "lock",
+          value: "value",
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+        forceAllowId: true,
+      });
+      expect(runMutation).toHaveBeenCalledTimes(1);
+      expect(runMutation.mock.calls[0]![1]).toMatchObject({
+        input: { model: "verification_custom", data: { identifier: "lock" } },
+        unique: ["identifier"],
+      });
+      await adapter.findOne({
+        model: "verification",
+        where: [{ field: "id", value: "reservation" }],
+      });
+      expect(runQuery).toHaveBeenCalledTimes(1);
+      expect(runQuery.mock.calls[0]![1]).toMatchObject({
+        model: "verification_custom",
+        where: [{ field: "identifier", value: "lock" }],
+      });
     });
 
     it("verifies a magic link for an existing unverified user", async () => {

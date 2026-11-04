@@ -291,7 +291,7 @@ export const convexAdapter = <
           const { createSchema } = await import("./create-schema.js");
           return createSchema({ file, tables });
         },
-        create: async ({ model, data, select }): Promise<any> => {
+        create: async ({ model, modelKey, data, select }): Promise<any> => {
           if (!("runMutation" in ctx)) {
             throw new Error("ctx is not a mutation ctx");
           }
@@ -312,7 +312,7 @@ export const convexAdapter = <
           };
           if (
             reservationId !== undefined &&
-            model === "verification" &&
+            (modelKey ?? model) === "verification" &&
             createData.identifier !== undefined
           ) {
             reservations.set(reservationId, createData.identifier);
@@ -335,7 +335,7 @@ export const convexAdapter = <
         findOne: async (data): Promise<any> => {
           // A reservation is read back by the id it was created with.
           const reservedIdentifier =
-            data.model === "verification" &&
+            (data.modelKey ?? data.model) === "verification" &&
             data.where?.length === 1 &&
             data.where[0]?.field === "_id" &&
             (data.where[0].operator ?? "eq") === "eq" &&
