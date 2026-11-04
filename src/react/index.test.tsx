@@ -17,10 +17,14 @@ type SessionState = {
 type AuthState = ReturnType<typeof useConvexAuth>;
 
 // Convex JWTs minted by the convex plugin always carry `sessionId`.
-const convexJwt = (sessionId: string) => {
+const convexJwt = (sessionId: string, version = 0) => {
   const encode = (value: object) =>
     Buffer.from(JSON.stringify(value)).toString("base64url");
-  return `${encode({ alg: "none" })}.${encode({ sessionId })}.sig`;
+  return `${encode({ alg: "none" })}.${encode({
+    sessionId,
+    exp: Math.floor(Date.now() / 1_000) + 900,
+    jti: String(version),
+  })}.sig`;
 };
 
 const pending: SessionState = { data: null, isPending: true };
@@ -65,8 +69,7 @@ const setup = async ({
   session: SessionState;
   tokens?: string[];
 }) => {
-  // `initialToken` is only honored by the first provider mount, tracked in
-  // module state, so every test gets a fresh copy of the module.
+  // Isolate the provider module and its exported hooks between tests.
   vi.resetModules();
   const { ConvexBetterAuthProvider } = await import("./index.js");
   const state = { session };
@@ -160,10 +163,11 @@ describe("ConvexBetterAuthProvider", () => {
 
   it("fetches a new token when the session is replaced", async () => {
     const initialToken = convexJwt("session-a");
+    const replacementToken = convexJwt("session-b");
     const { events, setSession } = await setup({
       initialToken,
       session: pending,
-      tokens: ["session-b-token"],
+      tokens: [replacementToken],
     });
     await setSession(signedIn("session-a"));
 
@@ -174,30 +178,32 @@ describe("ConvexBetterAuthProvider", () => {
       `authenticate:${initialToken}`,
       "clearAuth",
       "setAuth",
-      "authenticate:session-b-token",
+      `authenticate:${replacementToken}`,
     ]);
   });
 
   it("does not trust an SSR token from a different session", async () => {
+    const replacementToken = convexJwt("session-b");
     const { events, setSession } = await setup({
       initialToken: convexJwt("session-a"),
       session: pending,
-      tokens: ["session-b-token"],
+      tokens: [replacementToken],
     });
 
     await setSession(signedIn("session-b"));
 
     expect(events.slice(-2)).toEqual([
       "setAuth",
-      "authenticate:session-b-token",
+      `authenticate:${replacementToken}`,
     ]);
   });
 
   it("uses an SSR token without a session id, then fetches a new one", async () => {
+    const sessionToken = convexJwt("session-a");
     const { events, setSession } = await setup({
       initialToken: "opaque-token",
       session: pending,
-      tokens: ["session-a-token"],
+      tokens: [sessionToken],
     });
     expect(events).toEqual(["setAuth", "authenticate:opaque-token"]);
 
@@ -206,36 +212,40 @@ describe("ConvexBetterAuthProvider", () => {
     expect(events.slice(2)).toEqual([
       "clearAuth",
       "setAuth",
-      "authenticate:session-a-token",
+      `authenticate:${sessionToken}`,
     ]);
   });
 
   it("caches fetched tokens and replaces them on forced refresh", async () => {
+    const firstToken = convexJwt("session-a", 1);
+    const nextToken = convexJwt("session-a", 2);
     const { events, fetchers, token } = await setup({
       session: signedIn("session-a"),
-      tokens: ["token-1", "token-2"],
+      tokens: [firstToken, nextToken],
     });
-    expect(events).toEqual(["setAuth", "authenticate:token-1"]);
+    expect(events).toEqual(["setAuth", `authenticate:${firstToken}`]);
     const fetchToken = fetchers[0]!;
 
     await expect(fetchToken({ forceRefreshToken: false })).resolves.toBe(
-      "token-1"
+      firstToken
     );
     expect(token).toHaveBeenCalledTimes(1);
 
     await expect(fetchToken({ forceRefreshToken: true })).resolves.toBe(
-      "token-2"
+      nextToken
     );
     await expect(fetchToken({ forceRefreshToken: false })).resolves.toBe(
-      "token-2"
+      nextToken
     );
     expect(token).toHaveBeenCalledTimes(2);
   });
 
   it("shares one in-flight token request", async () => {
+    const firstToken = convexJwt("session-a", 1);
+    const nextToken = convexJwt("session-a", 2);
     const { fetchers, token } = await setup({
       session: signedIn("session-a"),
-      tokens: ["token-1", "token-2"],
+      tokens: [firstToken, nextToken],
     });
     token.mockClear();
     const fetchToken = fetchers[0]!;
@@ -245,7 +255,7 @@ describe("ConvexBetterAuthProvider", () => {
       fetchToken({ forceRefreshToken: false }),
     ]);
 
-    expect([a, b]).toEqual(["token-2", "token-2"]);
+    expect([a, b]).toEqual([nextToken, nextToken]);
     expect(token).toHaveBeenCalledTimes(1);
   });
 });
