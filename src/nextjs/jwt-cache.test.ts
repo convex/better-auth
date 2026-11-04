@@ -87,4 +87,16 @@ describe("convexBetterAuthNextJs jwtCache retry", () => {
     expect(mockGetToken).toHaveBeenCalledTimes(1);
     expect(mockFetchQuery).toHaveBeenCalledTimes(1);
   });
+
+  it("does not retry when the cached token was already fresh", async () => {
+    const authError = new Error("Unauthorized");
+    mockGetToken.mockResolvedValue({ token: "fresh-token", isFresh: true });
+    mockFetchQuery.mockRejectedValue(authError);
+
+    const { fetchAuthQuery } = setup((error) => error === authError);
+
+    await expect(fetchAuthQuery(queryRef, {})).rejects.toBe(authError);
+    expect(mockGetToken).toHaveBeenCalledTimes(1);
+    expect(mockFetchQuery).toHaveBeenCalledTimes(1);
+  });
 });
