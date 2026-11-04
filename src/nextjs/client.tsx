@@ -41,8 +41,6 @@ const useConvexPreloadedQuery = <Query extends FunctionReference<"query">>(
 
 export const usePreloadedAuthQuery = <Query extends FunctionReference<"query">>(
   preloadedQuery: Preloaded<Query>
-  // `undefined` once the preloaded value expires with no live result to
-  // replace it, eg. when auth settles as unauthenticated. Same as `useQuery`.
 ): Query["_returnType"] | undefined => {
   const { isLoading } = useConvexAuth();
   const latestData = useConvexPreloadedQuery(preloadedQuery);
