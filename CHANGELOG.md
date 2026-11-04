@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- feat: support Better Auth 1.7 (minimum 1.7.16); 1.6 is no longer supported
+- breaking: support Better Auth 1.7 (minimum 1.7.16); 1.6 is no longer supported
   (#433). Breaking changes and upgrade steps are in the
   [upgrade guide](https://labs.convex.dev/better-auth/upgrading)
 - breaking: acting as an OpenID provider (`oidcProvider`) is no longer
@@ -20,8 +20,8 @@
   so the plugin no longer collides with Better Auth's `oneTimeToken` plugin
 - breaking: `verbose` no longer turns on the Better Auth adapter's `debugLogs`,
   which log full database rows including session tokens and password hashes;
-  verbose logs now hold only redacted headers. Turn on adapter debug logs with
-  the new `debugLogs` option on `createClient()`
+  verbose logs now hold only the `baseURL` and redacted headers. Turn on adapter
+  debug logs with the new `debugLogs` option on `createClient()`
 - fix: native `consumeOne` and `incrementOne`, and 1.7's verification
   reservations work (#432); 1.7 schema columns (#435); `rateLimit.lastRequest`
   index (#446)
