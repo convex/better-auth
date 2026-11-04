@@ -1,0 +1,11 @@
+<div className="fd-step">
+
+### Remove `generateId: "uuid"`
+
+Remove `advanced.database.generateId: "uuid"` from your Better Auth options. It
+never had an effect, because Convex assigns document ids, and on Better Auth 1.7
+it turns off enforcement of verification reservations, the single-use locks
+Better Auth takes on verification values. The Convex plugin logs a warning while
+it is set.
+
+</div>

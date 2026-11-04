@@ -27,6 +27,7 @@ export function useUseAuthFromBetterAuth(
   initialToken?: string | null
 ) {
   const [cachedToken, setCachedToken] = useState(initialToken ?? null);
+  const bootstrapTokenRef = useRef(initialToken ?? null);
   const cachedTokenRef = useRef(cachedToken);
   const cachedTokenSessionIdRef = useRef(getSessionIdFromToken(cachedToken));
   const pendingTokenRef = useRef<TokenFlight | null>(null);
@@ -145,9 +146,17 @@ export function useUseAuthFromBetterAuth(
               return null;
             }
             const currentToken = cachedTokenRef.current;
+            // Preserve opaque SSR bootstrap tokens until the session resolves.
+            // Fresh endpoint responses below still require valid JWT metadata.
+            const isOpaqueBootstrap =
+              requestedSessionId == null &&
+              currentToken === bootstrapTokenRef.current &&
+              typeof currentToken === "string" &&
+              currentToken.length > 0 &&
+              !currentToken.includes(".");
             if (
               !forceRefreshToken &&
-              isUsableToken(currentToken) &&
+              (isUsableToken(currentToken) || isOpaqueBootstrap) &&
               !pendingTokenRef.current &&
               (requestedSessionId == null ||
                 cachedTokenSessionIdRef.current === requestedSessionId)

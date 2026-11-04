@@ -1,0 +1,23 @@
+<div className="fd-step">
+
+### Export the new adapter functions
+
+Better Auth 1.7 adds two atomic adapter operations, `consumeOne` and
+`incrementOne`, which the component implements as Convex mutations. Export them
+from your adapter file alongside the existing functions.
+
+```ts title="convex/betterAuth/adapter.ts"
+export const {
+  create,
+  findOne,
+  findMany,
+  updateOne,
+  updateMany,
+  deleteOne,
+  deleteMany,
+  consumeOne, // [!code ++]
+  incrementOne, // [!code ++]
+} = createApi(schema, createAuthOptions);
+```
+
+</div>

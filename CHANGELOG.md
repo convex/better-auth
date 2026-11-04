@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+## 0.13.0
+
+- breaking: support Better Auth 1.7 (minimum 1.7.16); 1.6 is no longer supported
+  (#433). Breaking changes and upgrade steps are in the
+  [upgrade guide](https://labs.convex.dev/better-auth/upgrading)
+- breaking: acting as an OpenID provider (`oidcProvider`) is no longer
+  supported, and compound unique indexes are rejected
+- breaking: sorting on a field without an index fails instead of returning rows
+  in creation order
+- breaking: Convex plugin endpoint keys renamed: `auth.api.getToken` →
+  `getConvexToken`, `getJwks` → `getConvexJwks`, `getOpenIdConfig` →
+  `getConvexOpenIdConfig` (#395)
+- fix: security hardening beyond 0.12.7: forwarded origin checks, the Convex JWT
+  cookie on session switch and expiry, JWT signing algorithm next to the `jwt`
+  plugin (#97), credentials redacted from verbose logs
+- breaking: cross-domain plugin: `auth.api.verifyOneTimeToken` is renamed
+  `verifyCrossDomainOneTimeToken` and its tokens use their own storage prefix,
+  so the plugin no longer collides with Better Auth's `oneTimeToken` plugin
+- breaking: `verbose` no longer turns on the Better Auth adapter's `debugLogs`,
+  which log full database rows including session tokens and password hashes;
+  verbose logs now hold only the `baseURL` and redacted headers. Turn on adapter
+  debug logs with the new `debugLogs` option on `createClient()`
+- fix: native `consumeOne` and `incrementOne`, and 1.7's verification
+  reservations work (#432); 1.7 schema columns (#435); `rateLimit.lastRequest`
+  index (#446)
+- fix: `AuthClient` accepts any client created with `convexClient()` (#393,
+  #420)
+- fix: adapter: `eq null` matches unset fields (#399), split pages aren't read
+  twice, `in` on a compound index no longer throws, `updateMany` updates a moved
+  row once, unique checks ignore nulls and pre-existing duplicates, a second
+  account with the same `providerId` and `accountId` is rejected
+- fix: `ConvexBetterAuthProvider` caches tokens per session (#398, #431)
+- fix: `session.cookieCache` is turned off with a warning (#18, #73, #434)
+- Includes fixes ported from #430 by @sshkeda and #425 by @suhailopensource, and
+  fixes for issues reported by @helixnebulatech and ported from their fork
+
 ## 0.12.7
 
 - fix: registerRoutes replaces an untrusted request origin with CONVEX_SITE_URL

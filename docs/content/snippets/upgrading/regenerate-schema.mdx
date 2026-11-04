@@ -1,0 +1,86 @@
+<div className="fd-step">
+
+### Regenerate schema
+
+With Local Install, regenerate the schema whenever you update Better Auth.
+Version 1.7 adds fields that Convex can write only after the schema declares
+them: `failedVerificationCount` and `lockedUntil` on `twoFactor`, `alg` and
+`crv` on `jwks`, and, for the organization plugin, `memberCount` on `team` and
+`membershipKey` on `teamMember`. It also adds an `accountId_providerId_userId`
+index on `account`, which Better Auth reads when a user sets, changes or resets
+a password. Without the index, each of those operations scans the whole table.
+
+Run the Better Auth CLI as `npx auth@1.7 generate`, which replaces the older
+`npx @better-auth/cli generate` command. Keep the CLI on the same minor version
+as `better-auth`; a newer CLI generates the schema for its own Better Auth
+version. The CLI needs Node.js 22.12 or later.
+
+```npm
+cd convex/betterAuth
+npx auth@1.7 generate
+```
+
+If your options include the `oidcProvider` plugin, remove it before you generate
+the schema, because Better Auth 1.7 no longer has it.
+
+If your database already has organization teams, Convex rejects the deploy: the
+generated schema requires `team.memberCount`, and existing teams don't have it.
+First, make `memberCount` optional and deploy:
+
+```ts title="convex/betterAuth/schema.ts"
+team: defineTable({
+  name: v.string(),
+  memberCount: v.number(), // [!code --]
+  memberCount: v.optional(v.number()), // [!code ++]
+  // ...
+});
+```
+
+Then set `memberCount` on each team from its members. This mutation updates 100
+teams per transaction and schedules itself for the next batch:
+
+```ts title="convex/betterAuth/migrations.ts"
+import { v } from "convex/values";
+import { internal } from "./_generated/api";
+import { internalMutation } from "./_generated/server";
+
+export const backfillTeamMemberCount = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, args) => {
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("team")
+      .paginate({ numItems: 100, cursor: args.cursor ?? null });
+    for (const team of page) {
+      if (team.memberCount !== undefined) {
+        continue;
+      }
+      const members = await ctx.db
+        .query("teamMember")
+        .withIndex("teamId", (q) => q.eq("teamId", team._id))
+        .collect();
+      await ctx.db.patch("team", team._id, { memberCount: members.length });
+    }
+    if (!isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.migrations.backfillTeamMemberCount,
+        { cursor: continueCursor }
+      );
+    }
+  },
+});
+```
+
+```npm
+npx convex run --component betterAuth migrations:backfillTeamMemberCount
+```
+
+The command returns after the first batch, and later batches run in the
+background. Each batch reads every member of its teams, so lower `numItems` if
+teams have thousands of members, to stay within Convex's
+[transaction limits](https://docs.convex.dev/production/state/limits#transactions).
+Until the backfill finishes, teams without `memberCount` reject new members if a
+team member limit is set. Then regenerate the schema so `memberCount` is
+required again, and deploy.
+
+</div>

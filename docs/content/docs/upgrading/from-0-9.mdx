@@ -1,0 +1,148 @@
+---
+title: Upgrading from 0.9
+description: Upgrade @convex-dev/better-auth from 0.9 to the latest version
+---
+
+Work through these steps in order, then deploy once. If you use Local Install
+and your database already has organization teams, you need a second deploy,
+described in [Regenerate schema](#regenerate-schema).
+
+## Dependencies
+
+<div className="fd-steps">
+
+<include>../../snippets/upgrading/install-dependencies.mdx</include>
+
+</div>
+
+## Auth config
+
+<div className="fd-steps">
+
+<include>../../snippets/upgrading/use-customjwt-auth-config-0-10.mdx</include>
+
+<include>
+  ../../snippets/upgrading/update-convex-better-auth-plugin-config-0-10.mdx
+</include>
+
+<include>
+  ../../snippets/upgrading/drop-optionsonly-parameter-from-createauth-0-10.mdx
+</include>
+
+<include>
+  ../../snippets/upgrading/set-baseurl-for-client-side-frameworks-0-12.mdx
+</include>
+
+<include>
+  ../../snippets/upgrading/dynamic-baseurl-and-forwarded-headers-0-13.mdx
+</include>
+
+<include>
+  ../../snippets/upgrading/generic-oauth-callback-path-0-13.mdx
+</include>
+
+<include>
+  ../../snippets/upgrading/remove-generateid-uuid-0-13.mdx
+</include>
+
+</div>
+
+## Server rendering
+
+These steps apply only to apps that use server-side rendering, such as
+Next.js and TanStack Start apps.
+
+<div className="fd-steps">
+
+<include>
+  ../../snippets/upgrading/update-framework-server-utilities-0-10.mdx
+</include>
+
+<include>../../snippets/upgrading/update-route-handlers-0-10.mdx</include>
+
+<include>
+  ../../snippets/upgrading/pass-initial-token-to-convexbetterauthprovider-0-10.mdx
+</include>
+
+</div>
+
+## Next.js
+
+<div className="fd-steps">
+
+<include>../../snippets/upgrading/use-usepreloadedauthquery-0-10.mdx</include>
+
+</div>
+
+## TanStack Start
+
+<div className="fd-steps">
+
+<include>../../snippets/upgrading/update-vite-configuration-0-10.mdx</include>
+
+<include>../../snippets/upgrading/update-router-config-0-10.mdx</include>
+
+<include>../../snippets/upgrading/update-root-route-0-10.mdx</include>
+
+<include>../../snippets/upgrading/reload-on-sign-out-0-10.mdx</include>
+
+</div>
+
+## Plugins
+
+<div className="fd-steps">
+
+<include>../../snippets/upgrading/passkey-plugin-removed-0-11.mdx</include>
+
+</div>
+
+## Client
+
+<div className="fd-steps">
+
+<include>
+  ../../snippets/upgrading/generic-oauth-sign-in-moved-to-signin-social-0-13.mdx
+</include>
+
+<include>
+  ../../snippets/upgrading/twofactor-enable-returns-a-discriminated-union-0-13.mdx
+</include>
+
+<include>
+  ../../snippets/upgrading/sorting-without-an-index-is-refused-0-13.mdx
+</include>
+
+</div>
+
+## Convex plugin
+
+<div className="fd-steps">
+
+<include>
+  ../../snippets/upgrading/convex-plugin-endpoint-keys-renamed-0-13.mdx
+</include>
+
+<include>
+  ../../snippets/upgrading/legacy-oidcprovider-tables-removed-from-schema-0-13.mdx
+</include>
+
+</div>
+
+## Local Install
+
+These steps apply only to apps that use
+[Local Install](/features/local-install).
+
+<div className="fd-steps">
+
+<include>../../snippets/upgrading/remove-getstaticauth-0-10.mdx</include>
+
+<include>
+  ../../snippets/upgrading/split-out-createauthoptions-function-0-10.mdx
+</include>
+
+<include>../../snippets/upgrading/update-adapter-0-10.mdx</include>
+
+<include>../../snippets/upgrading/regenerate-schema.mdx</include>
+
+</div>

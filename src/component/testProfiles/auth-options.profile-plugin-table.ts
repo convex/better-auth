@@ -54,6 +54,29 @@ export const pluginTableProfileOptions = {
       },
     },
     {
+      // Compound table-level index (Better Auth 1.7 `indexes`).
+      id: "compound-index-test",
+      schema: {
+        compoundIndex: {
+          fields: {
+            groupId: {
+              type: "string",
+              required: true,
+            },
+            slot: {
+              type: "string",
+              required: true,
+            },
+            label: {
+              type: "string",
+              required: false,
+            },
+          },
+          indexes: [{ fields: ["groupId", "slot"] }],
+        },
+      },
+    },
+    {
       id: "plugin-table-test-model",
       schema: {
         testModel: {

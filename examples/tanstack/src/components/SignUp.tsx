@@ -50,9 +50,9 @@ export default function SignUp() {
         onRequest: () => {
           setLoading(true)
         },
-        onSuccess: async () => {
+        onSuccess: () => {
           setLoading(false)
-          await navigate({ to: '/' })
+          void navigate({ to: '/' })
         },
         onError: async (ctx) => {
           setLoading(false)
@@ -128,7 +128,7 @@ export default function SignUp() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="password">Confirm Password</Label>
+                <Label htmlFor="password_confirmation">Confirm Password</Label>
                 <Input
                   id="password_confirmation"
                   type="password"

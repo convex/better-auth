@@ -1,0 +1,17 @@
+<div className="fd-step">
+
+### Update Vite configuration
+
+Configure Vite to bundle `@convex-dev/better-auth` during server-side rendering,
+which avoids module resolution errors.
+
+```ts title="vite.config.ts"
+export default defineConfig({
+  // ...other config
+  ssr: {
+    noExternal: ["@convex-dev/better-auth"],
+  },
+});
+```
+
+</div>

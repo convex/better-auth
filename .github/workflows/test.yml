@@ -52,5 +52,7 @@ jobs:
         run: cd e2e && npm i
       - name: Install Playwright browsers
         run: cd e2e && npx playwright install --with-deps chromium
+      - name: Run Convex semantics suite against a local backend
+        run: cd e2e && node backendHarness.js 'bash live-semantics/run.sh'
       - name: Run e2e tests
         run: cd e2e && npm run test

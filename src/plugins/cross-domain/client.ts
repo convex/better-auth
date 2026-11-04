@@ -2,7 +2,6 @@ import type { BetterAuthClientPlugin, ClientStore } from "better-auth/client";
 import { parseSetCookieHeader } from "better-auth/cookies";
 import type { BetterFetchOption } from "@better-fetch/fetch";
 import type { crossDomain } from "./index.js";
-import { VERSION } from "../../version.js";
 
 interface StoredCookie {
   value: string;
@@ -55,6 +54,9 @@ export function getSetCookie(header: string, prevCookie?: string) {
   return JSON.stringify(toSetCookie);
 }
 
+const sessionTokenOf = (cookieHeader: string) =>
+  cookieHeader.split("; ").find((cookie) => cookie.includes(".session_token="));
+
 export function getCookie(cookie: string) {
   let parsed = {} as Record<string, StoredCookie>;
   try {
@@ -88,7 +90,6 @@ export const crossDomainClient = (
 
   return {
     id: "cross-domain",
-    version: VERSION,
     $InferServerPlugin: {} as ReturnType<typeof crossDomain>,
     getActions(_, $store) {
       store = $store;
@@ -202,7 +203,18 @@ export const crossDomainClient = (
             ) {
               const data = context.data;
               storage.setItem(localCacheName, JSON.stringify(data));
-              if (data === null) {
+              // The stored session token changed while this request was in
+              // flight, e.g. a one-time token was redeemed: the null answer
+              // is about the token sent, so it must not clear the new one.
+              const sentCookie =
+                context.request.headers?.get?.("better-auth-cookie") ?? null;
+              const sessionTokenChanged =
+                sentCookie !== null &&
+                sessionTokenOf(sentCookie) !==
+                  sessionTokenOf(
+                    getCookie(storage.getItem(cookieName) || "{}")
+                  );
+              if (data === null && !sessionTokenChanged) {
                 // Preserve non-session cookies (e.g. two_factor) when
                 // get-session returns null during 2FA pending state.
                 // Previously this unconditionally set cookieName to "{}",

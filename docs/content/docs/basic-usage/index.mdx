@@ -31,6 +31,20 @@ in Convex.
   Auth component (preconfigured with the
   [supported plugins](/supported-plugins)) is used, and cannot be altered.
 
+- #### Session cookie cache
+
+  Better Auth's `session.cookieCache` isn't supported with Convex, so sessions
+  are always read from the database. If your Better Auth options enable it, the
+  Convex plugin turns it off and logs a warning.
+
+- #### Id generation
+
+  Convex assigns document ids, so `advanced.database.generateId` has no effect;
+  don't set it. On Better Auth 1.7, setting it to `"uuid"` also turns off
+  enforcement of verification reservations, the single-use locks Better Auth
+  takes on verification values. While it is `"uuid"`, the Convex plugin logs a
+  warning.
+
 ## Using server methods with `auth.api`
 
 Better Auth's server side `auth.api` methods can be used with your `createAuth`

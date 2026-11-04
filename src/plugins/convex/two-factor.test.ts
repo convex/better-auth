@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AuthConfig } from "convex/server";
+import * as jose from "jose";
 import { betterAuth } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { twoFactor } from "better-auth/plugins/two-factor";
@@ -87,6 +88,18 @@ const passwordSignIn = async (auth: Auth, email: string) => {
   return { response: response as any, cookies: parseSetCookies(headers) };
 };
 
+const verifyAgainstJwks = async (auth: Auth, jwt: string) => {
+  // The check Convex performs: signature against the published JWKS,
+  // issuer and audience.
+  const api = auth.api as any;
+  const jwks = await (api.getConvexJwks ?? api.getJwks)({});
+  const keySet = jose.createLocalJWKSet(jwks);
+  return await jose.jwtVerify(jwt, keySet, {
+    issuer: SITE_URL,
+    audience: "convex",
+  });
+};
+
 describe.each<Order>(["convex-first", "two-factor-first"])(
   "convex plugin JWT cookie with plugin order %s",
   (order) => {
@@ -114,6 +127,57 @@ describe.each<Order>(["convex-first", "two-factor-first"])(
       expect(await ctx.adapter.count({ model: "session" })).toBe(
         sessionsBefore
       );
+    });
+
+    it("does not issue a JWT on sign-in, and issues one on get-session with a valid session", async () => {
+      const { auth, signUp } = await makeAuth(order);
+      const user = await signUp("user@example.com");
+      const { response, cookies } = await passwordSignIn(
+        auth,
+        "user@example.com"
+      );
+      expect(response.token).toBeTypeOf("string");
+      const jwtCookie = cookies.get("better-auth.convex_jwt");
+      if (jwtCookie) {
+        expect(jwtCookie.value).toBe("");
+        expect(jwtCookie.raw).toMatch(/Max-Age=0/);
+      }
+      const sessionCookie = cookies.get("better-auth.session_token")!;
+      expect(sessionCookie.raw).not.toMatch(/Max-Age=0/);
+
+      const getSession = await auth.api.getSession({
+        headers: new Headers({
+          cookie: `better-auth.session_token=${encodeURIComponent(sessionCookie.value)}`,
+        }),
+        returnHeaders: true,
+      });
+      expect(getSession.response?.user.id).toBe(user.id);
+      const refreshed = parseSetCookies(getSession.headers).get(
+        "better-auth.convex_jwt"
+      );
+      expect(refreshed?.raw).toMatch(/Max-Age=900/);
+      const { payload } = await verifyAgainstJwks(auth, refreshed!.value);
+      expect(payload.sub).toBe(user.id);
+      expect((payload as any).sessionId).toBe(getSession.response?.session.id);
+    });
+
+    it("issues a JWT from /convex/token with a valid session", async () => {
+      const { auth, signUp } = await makeAuth(order);
+      const user = await signUp("user@example.com");
+      const { cookies } = await passwordSignIn(auth, "user@example.com");
+      const sessionCookie = cookies.get("better-auth.session_token")!;
+      const api = auth.api as any;
+      const { response, headers } = await (api.getConvexToken ?? api.getToken)({
+        headers: new Headers({
+          cookie: `better-auth.session_token=${encodeURIComponent(sessionCookie.value)}`,
+        }),
+        returnHeaders: true,
+      });
+      const { payload } = await verifyAgainstJwks(auth, response.token);
+      expect(payload.sub).toBe(user.id);
+      expect(
+        parseSetCookies(headers).get("better-auth.convex_jwt")?.value
+      ).toBe(response.token);
     });
   }
 );

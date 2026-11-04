@@ -46,12 +46,14 @@ export default function EnableTwoFactor({ onBack }: { onBack: () => void }) {
       const { data } = await authClient.twoFactor.enable({
         password,
       })
-      if (data?.totpURI) {
+      if (data?.method === 'totp') {
         setTotpUri(data.totpURI)
         if (data.backupCodes) {
           setBackupCodes(data.backupCodes)
         }
         setStep('qr-verify')
+      } else {
+        alert('Failed to enable 2FA. Please check your password and try again.')
       }
     } catch {
       alert('Failed to enable 2FA. Please check your password and try again.')

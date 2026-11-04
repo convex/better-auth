@@ -6,6 +6,10 @@ import { useState } from "react";
 import { Check, Trash2, X } from "lucide-react";
 import { Id } from "convex/_generated/dataModel";
 
+// Optimistic todos get a placeholder id until the server assigns a real one.
+// Buttons on a placeholder are disabled, since the server can't act on it.
+const isPlaceholder = (id: string) => id.startsWith("optimistic:");
+
 // Mutations w/ optimistic updates
 const useCreateTodo = () =>
   useMutation(api.todos.create).withOptimisticUpdate((localStore, args) => {
@@ -19,7 +23,7 @@ const useCreateTodo = () =>
     }
     localStore.setQuery(api.todos.get, {}, [
       {
-        _id: crypto.randomUUID() as Id<"todos">,
+        _id: `optimistic:${crypto.randomUUID()}` as Id<"todos">,
         _creationTime: Date.now(),
         text: args.text,
         completed: false,
@@ -104,6 +108,7 @@ export function TodoList() {
             <Button
               variant="ghost"
               size="icon"
+              disabled={isPlaceholder(todo._id)}
               onClick={() => toggle({ id: todo._id })}
               className="text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800"
             >
@@ -125,6 +130,7 @@ export function TodoList() {
             <Button
               variant="ghost"
               size="icon"
+              disabled={isPlaceholder(todo._id)}
               onClick={() => remove({ id: todo._id })}
               className="text-neutral-500 hover:text-red-400 hover:bg-neutral-800 opacity-0 group-hover:opacity-100 transition-opacity"
             >

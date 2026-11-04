@@ -15,6 +15,7 @@ import type {
 import { ConvexError, v } from "convex/values";
 import type { Infer } from "convex/values";
 import { convexAdapter } from "./adapter.js";
+import type { DBAdapterDebugLogOption } from "better-auth/adapters";
 import { corsRouter } from "convex-helpers/server/cors";
 import type defaultSchema from "../component/schema.js";
 import type { CreateAuth, GenericCtx } from "./index.js";
@@ -68,6 +69,8 @@ type SlimComponentApi = {
     updateMany: FunctionReference<"mutation", "internal">;
     deleteOne: FunctionReference<"mutation", "internal">;
     deleteMany: FunctionReference<"mutation", "internal">;
+    consumeOne: FunctionReference<"mutation", "internal">;
+    incrementOne: FunctionReference<"mutation", "internal">;
   };
 };
 
@@ -85,8 +88,10 @@ type RegisterRoutesLazyOptions = {
   cors?: RouteCorsOptions;
 };
 
-// Origins the app trusts exactly (scheme + host): non-wildcard http(s)
-// entries in trustedOrigins and, with a dynamic baseURL, in allowedHosts.
+// Origins the app trusts exactly: non-wildcard http(s) entries in
+// trustedOrigins, plus what Better Auth derives from a dynamic baseURL's
+// allowedHosts and fallback (ctx.trustedOrigins). Origins are compared as
+// scheme + host, so an https-only origin is never trusted over http.
 const exactTrustedOrigins = async (
   auth: {
     $context: Promise<{
@@ -119,7 +124,7 @@ const exactTrustedOrigins = async (
   return trusted;
 };
 
-// Normalized `scheme://host` for an http(s) URL, or null.
+// Normalized `scheme://host` for an http(s) URL or origin string, or null.
 const parseHttpOrigin = (value: string) => {
   try {
     const url = new URL(value);
@@ -132,28 +137,60 @@ const parseHttpOrigin = (value: string) => {
   }
 };
 
-// Set the request URL, `host`, `x-forwarded-host` and `x-forwarded-proto` to
-// a single origin Better Auth may build links from: the browser-facing origin
-// a framework proxy handler sent in x-better-auth-forwarded-* if the app
-// trusts it exactly, else the request's own origin if trusted exactly, else
-// the deployment's site URL. A self-hosted backend passes a client's `Host`
-// and x-forwarded-* through and builds `request.url` from them, so none of
-// those can be trusted on their own.
+// The origin a `proto` + `host` header pair claims, or null when it isn't a
+// bare http(s) origin (no userinfo, path, query or fragment smuggled in).
+const forwardedOrigin = (proto: string | null, host: string | null) => {
+  if (!host || (proto !== "http" && proto !== "https")) {
+    return null;
+  }
+  try {
+    const url = new URL(`${proto}://${host}`);
+    return url.href === `${url.origin}/` ? url.origin : null;
+  } catch {
+    return null;
+  }
+};
+
+// The component sits in front of Better Auth as its reverse proxy, so it
+// decides which origin Better Auth sees. On every request the URL, `host`,
+// `x-forwarded-host` and `x-forwarded-proto` are all set to one origin, in
+// this order of preference:
+//
+// 1. The browser-facing origin a framework proxy handler sent in
+//    x-better-auth-forwarded-host/-proto, when scheme and host together form
+//    an origin the app trusts exactly.
+// 2. The request's own origin, when the app trusts it exactly (a custom
+//    domain listed in trustedOrigins or allowedHosts).
+// 3. The deployment's own site URL, which only the deployment config
+//    controls. On Convex Cloud the edge already sets the forwarded headers
+//    and request URL to this; the self-hosted backend passes a client's
+//    `Host` and x-forwarded-* through and builds `request.url` from them,
+//    so they can't be trusted on their own.
+//
+// Better Auth reads whichever of these its version and config call for:
+// x-forwarded-* with `trustedProxyHeaders`, `host` for a dynamic baseURL
+// without it, and the request URL otherwise. Setting all of them keeps the
+// result the same across those modes, and the same as a direct deploy at
+// the trusted origin.
 const normalizeRequestOrigin = (
   request: Request,
   trustedOrigins: Set<string>
 ) => {
   const url = new URL(request.url);
-  const fromProxyHandler = parseHttpOrigin(
-    `${request.headers.get("x-better-auth-forwarded-proto")}://${request.headers.get("x-better-auth-forwarded-host")}`
+  const fromProxyHandler = forwardedOrigin(
+    request.headers.get("x-better-auth-forwarded-proto"),
+    request.headers.get("x-better-auth-forwarded-host")
   );
   const ownOrigin = parseHttpOrigin(url.origin);
+  const siteOrigin = process.env.CONVEX_SITE_URL
+    ? parseHttpOrigin(process.env.CONVEX_SITE_URL)
+    : null;
   const origin =
     (fromProxyHandler && trustedOrigins.has(fromProxyHandler)
       ? fromProxyHandler
       : null) ??
     (ownOrigin && trustedOrigins.has(ownOrigin) ? ownOrigin : null) ??
-    parseHttpOrigin(process.env.CONVEX_SITE_URL ?? "") ??
+    siteOrigin ??
     ownOrigin;
   if (!origin) {
     return request;
@@ -163,6 +200,8 @@ const normalizeRequestOrigin = (
   headers.set("host", target.host);
   headers.set("x-forwarded-host", target.host);
   headers.set("x-forwarded-proto", target.protocol.slice(0, -1));
+  headers.delete("x-better-auth-forwarded-host");
+  headers.delete("x-better-auth-forwarded-proto");
   return new Request(`${origin}${url.pathname}${url.search}`, {
     method: request.method,
     headers,
@@ -171,6 +210,34 @@ const normalizeRequestOrigin = (
     duplex: "half",
   });
 };
+
+// Verbose logs end up in the Convex dashboard and log streams, and get pasted
+// into issues. Keep credentials (session cookies, bearer tokens, JWTs, API
+// keys) out of them.
+const SENSITIVE_HEADERS = new Set([
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "better-auth-cookie",
+  "set-better-auth-cookie",
+  "set-auth-token",
+  "set-auth-jwt",
+  "x-api-key",
+]);
+// Redirects carry one-time tokens, OAuth codes and state in the query string
+const redactQuery = (value: string) => {
+  const queryStart = value.indexOf("?");
+  return queryStart === -1 ? value : `${value.slice(0, queryStart)}?[redacted]`;
+};
+const redactHeaders = (headers: Headers) =>
+  Array.from(headers.entries()).map(([name, value]) => [
+    name,
+    SENSITIVE_HEADERS.has(name)
+      ? "[redacted]"
+      : name === "location" || name === "referer"
+        ? redactQuery(value)
+        : value,
+  ]);
 
 /**
  * Backend API for the Better Auth component.
@@ -182,7 +249,11 @@ const normalizeRequestOrigin = (
  * `./_generated/api` once you've configured it in `convex.config.ts`.
  * @param config - Configuration options for the component.
  * @param config.local - Local schema configuration.
- * @param config.verbose - Whether to enable verbose logging.
+ * @param config.verbose - Whether to log the configured `baseURL` and the
+ * request and response headers of each auth request, with credentials redacted.
+ * @param config.debugLogs - Better Auth adapter debug logs, off by default.
+ * They log full database rows without redaction, including session tokens and
+ * password hashes.
  * @param config.triggers - Triggers configuration.
  * @param config.authFunctions - Authentication functions configuration.
  */
@@ -197,6 +268,7 @@ export const createClient = <
       schema?: Schema;
     };
     verbose?: boolean;
+    debugLogs?: DBAdapterDebugLogOption;
   } & (
     | {
         triggers: Triggers<DataModel, Schema>;
@@ -284,10 +356,7 @@ export const createClient = <
      * @returns The Convex database adapter
      */
     adapter: (ctx: GenericCtx<DataModel>) =>
-      convexAdapter<DataModel, typeof ctx, Schema>(ctx, component, {
-        ...config,
-        debugLogs: config?.verbose,
-      }),
+      convexAdapter<DataModel, typeof ctx, Schema>(ctx, component, config),
 
     /**
      * Returns the Better Auth auth object and headers for using Better Auth API
@@ -457,7 +526,7 @@ export const createClient = <
           // eslint-disable-next-line no-console
           console.log("options.baseURL", staticAuth.options.baseURL);
           // eslint-disable-next-line no-console
-          console.log("request headers", request.headers);
+          console.log("request headers", redactHeaders(request.headers));
         }
         const auth = createAuth(ctx as any);
         const normalizedRequest = normalizeRequestOrigin(
@@ -467,7 +536,7 @@ export const createClient = <
         const response = await auth.handler(normalizedRequest);
         if (config?.verbose) {
           // eslint-disable-next-line no-console
-          console.log("response headers", response.headers);
+          console.log("response headers", redactHeaders(response.headers));
         }
         return response;
       });
@@ -544,7 +613,9 @@ export const createClient = <
         exposedHeaders: ["Set-Better-Auth-Cookie"].concat(
           corsOpts.exposedHeaders ?? []
         ),
-        debug: config?.verbose,
+        // The CORS router logs raw request and response headers, which carry
+        // credentials. The verbose logs above print them redacted.
+        debug: false,
         enforceAllowOrigins: false,
       });
 
@@ -580,7 +651,7 @@ export const createClient = <
           // eslint-disable-next-line no-console
           console.log("options.baseURL", getRegistrationAuth().options.baseURL);
           // eslint-disable-next-line no-console
-          console.log("request headers", request.headers);
+          console.log("request headers", redactHeaders(request.headers));
         }
         const auth = createAuth(ctx as any);
         const normalizedRequest = normalizeRequestOrigin(
@@ -590,7 +661,7 @@ export const createClient = <
         const response = await auth.handler(normalizedRequest);
         if (config?.verbose) {
           // eslint-disable-next-line no-console
-          console.log("response headers", response.headers);
+          console.log("response headers", redactHeaders(response.headers));
         }
         return response;
       });
@@ -660,7 +731,9 @@ export const createClient = <
         exposedHeaders: ["Set-Better-Auth-Cookie"].concat(
           corsOpts.exposedHeaders ?? []
         ),
-        debug: config?.verbose,
+        // The CORS router logs raw request and response headers, which carry
+        // credentials. The verbose logs above print them redacted.
+        debug: false,
         enforceAllowOrigins: false,
       });
 

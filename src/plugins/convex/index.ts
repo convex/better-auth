@@ -6,29 +6,12 @@ import {
   sessionMiddleware,
 } from "better-auth/api";
 import { bearer as bearerPlugin } from "better-auth/plugins/bearer";
-import { jwt as jwtPlugin } from "better-auth/plugins/jwt";
+import { createJwk, jwt as jwtPlugin, signJWT } from "better-auth/plugins/jwt";
 import type { JwtOptions, Jwk } from "better-auth/plugins/jwt";
-import { oidcProvider as oidcProviderPlugin } from "better-auth/plugins/oidc-provider";
 import { omit } from "convex-helpers";
 import type { AuthConfig, AuthProvider } from "convex/server";
-import { VERSION } from "../../version.js";
 
 export const JWT_COOKIE_NAME = "convex_jwt";
-
-type BetterAuthAfterHooks = NonNullable<
-  NonNullable<BetterAuthPlugin["hooks"]>["after"]
->;
-type BetterAuthAfterHook = BetterAuthAfterHooks[number];
-type BetterAuthHookContext = Parameters<BetterAuthAfterHook["matcher"]>[0];
-
-const normalizeAfterHooks = <THook extends BetterAuthAfterHook>(
-  hooks: THook[]
-): BetterAuthAfterHooks => {
-  return hooks.map((hook) => ({
-    ...hook,
-    matcher: (ctx: BetterAuthHookContext) => Boolean(hook.matcher(ctx)),
-  }));
-};
 
 const getJwksAlg = (authProvider: AuthProvider) => {
   const isCustomJwt =
@@ -170,21 +153,16 @@ export const convex = (opts: {
   jwksRotateOnTokenGenerationError?: boolean;
   /**
    * @param {BetterAuthOptions} options - Better Auth options. Not required,
-   * currently used to pass the basePath to the oidcProvider plugin.
+   * currently used to build the `jwks_uri` in the OpenID discovery document
+   * when Better Auth uses a non-default `basePath`.
    */
   options?: BetterAuthOptions;
 }) => {
   const jwtExpirationSeconds =
     opts.jwt?.expirationSeconds ?? opts.jwtExpirationSeconds ?? 60 * 15;
-  const oidcProvider = oidcProviderPlugin({
-    loginPage: "/not-used",
-    metadata: {
-      issuer: `${process.env.CONVEX_SITE_URL}`,
-      jwks_uri: `${process.env.CONVEX_SITE_URL}${opts.options?.basePath ?? "/api/auth"}/convex/jwks`,
-    },
-    __skipDeprecationWarning: true,
-  });
   const providerConfig = parseAuthConfig(opts.authConfig, opts);
+  const issuer = `${process.env.CONVEX_SITE_URL}`;
+  const jwksUri = `${process.env.CONVEX_SITE_URL}${opts.options?.basePath ?? "/api/auth"}/convex/jwks`;
 
   const jwtOptions = {
     jwt: {
@@ -242,6 +220,77 @@ export const convex = (opts: {
       },
     },
   });
+  // The jwks table is shared with Better Auth's jwt plugin when an app adds
+  // it, and its keys can be of another algorithm. Convex accepts only the
+  // algorithm in the auth config, so the Convex JWT is signed with that
+  // algorithm pinned (as Better Auth's oauthProvider does), and only keys of
+  // that algorithm are published, exported and rotated. Keys without an alg
+  // predate the column and count as the configured one, as in Better Auth.
+  const alg = jwtOptions.jwks.keyPairConfig.alg;
+  const isConvexKey = (key: { alg?: string | null }) =>
+    key.alg == null || key.alg === alg;
+  const findConvexKeys = async (ctx: {
+    context: { adapter: { findMany: (args: any) => Promise<unknown> } };
+  }) =>
+    (
+      (await ctx.context.adapter.findMany({
+        model: "jwks",
+        sortBy: { field: "createdAt", direction: "desc" },
+      })) as Jwk[]
+    ).filter(isConvexKey);
+  const deleteConvexKeys = async (ctx: {
+    context: {
+      adapter: {
+        findMany: (args: any) => Promise<unknown>;
+        deleteMany: (args: any) => Promise<unknown>;
+      };
+    };
+  }) => {
+    const ids = (await findConvexKeys(ctx)).map((key) => key.id);
+    if (ids.length > 0) {
+      await ctx.context.adapter.deleteMany({
+        model: "jwks",
+        where: [{ field: "id", operator: "in", value: ids }],
+      });
+    }
+  };
+  // The latest Convex key, created if there is none, for static JWKS use.
+  const latestConvexKey = async (ctx: Parameters<typeof createJwk>[0]) => {
+    let [key] = await findConvexKeys(ctx);
+    if (!key) {
+      // jwtOptions, not jwt.options: the plugin's jwks adapter above can't
+      // create keys when a static JWKS is configured, and rotation always
+      // writes the new key to the database.
+      await createJwk(ctx, jwtOptions);
+      [key] = await findConvexKeys(ctx);
+    }
+    // Set alg, otherwise Better Auth defaults the static key to EdDSA
+    return [{ ...key, alg }];
+  };
+  // getSession stores the session it found in ctx.context.session before
+  // checking its expiry, and answers null for an expired one, so an after
+  // hook must check the expiry itself before treating it as established.
+  const liveSession = (ctx: {
+    context: { session?: { session: Session; user: User } | null };
+  }) => {
+    const session = ctx.context.session;
+    return session && new Date(session.session.expiresAt).getTime() > Date.now()
+      ? session
+      : null;
+  };
+  const signConvexJwt = async (
+    ctx: Parameters<typeof signJWT>[0],
+    session: { user: User & Record<string, any>; session: Session }
+  ) =>
+    await signJWT(ctx, {
+      options: jwt.options,
+      // definePayload above adds sessionId and iat
+      payload: {
+        ...(await jwtOptions.jwt.definePayload(session)),
+        sub: session.user.id,
+      },
+      signingAlgorithm: alg,
+    });
   // Bearer plugin converts the session token to a cookie
   // for cross domain social login after code verification,
   // and is required for the headers() helper to work.
@@ -255,9 +304,31 @@ export const convex = (opts: {
 
   return {
     id: "convex",
-    version: VERSION,
     init: (ctx) => {
-      const { options, logger: _logger } = ctx;
+      const { options, logger } = ctx;
+      // Better Auth's session cookie cache isn't supported with Convex: the
+      // adapter returns dates as numbers, and since Better Auth 1.7 the cache
+      // payload is only accepted with Date objects, so a cached session never
+      // validates and every /get-session falls back to the database and sets
+      // the cookie again. Turn it off here. Options returned from init are
+      // merged under the app's options and would lose, so change the app's
+      // options in place; the request-time checks read this same object.
+      if (options.session?.cookieCache?.enabled) {
+        logger.warn(
+          "[convex-better-auth] session.cookieCache isn't supported with Convex and has been turned off. Remove it from your Better Auth options."
+        );
+        options.session.cookieCache.enabled = false;
+      }
+      // Convex assigns document ids, so generateId has no effect, except that
+      // in "uuid" mode Better Auth drops the ids it reserves verification
+      // values by (single-use locks) before the adapter sees them, and every
+      // reservation succeeds. The adapter can't tell those creates apart
+      // without the id, so warn here.
+      if (options.advanced?.database?.generateId === "uuid") {
+        logger.warn(
+          '[convex-better-auth] advanced.database.generateId: "uuid" has no effect with Convex, which assigns document ids, and it stops Better Auth\'s verification reservations (single-use locks) from being enforced. Remove the option.'
+        );
+      }
       if (options.basePath !== "/api/auth" && !opts.options?.basePath) {
         // eslint-disable-next-line no-console
         console.warn(
@@ -309,37 +380,37 @@ export const convex = (opts: {
             ctx.context.adapter.updateMany = noopWrite("updateMany") as any;
             ctx.context.adapter.delete = noopWrite("delete") as any;
             ctx.context.adapter.deleteMany = noopWrite("deleteMany") as any;
+            // consumeOne and incrementOne stay as they are and throw: their
+            // callers act on the result, and a faked miss can make them
+            // retry forever (for example api-key rate limiting).
             return { context: ctx };
           }),
         },
       ],
       after: [
-        ...normalizeAfterHooks(oidcProvider.hooks.after),
         {
-          // Only refresh the Convex JWT cookie for an established session.
-          // Never sign one for a new session: a later plugin's after hook can
-          // still cancel the sign-in and delete it (twoFactor does, while the
-          // second factor is pending). Sign-in paths clear the cookie below
-          // instead; /convex/token and the next /get-session set it again.
+          // Refresh the Convex JWT cookie only on requests made with an
+          // established session (/get-session, /update-session). The
+          // /convex/token endpoint below does the same behind
+          // sessionMiddleware. The JWT is never signed for
+          // ctx.context.newSession: after hooks run in plugin order, and a
+          // later plugin's hook can still cancel the sign-in and delete
+          // that session (twoFactor does this while the second factor is
+          // pending), which would leave a valid JWT for a session that no
+          // longer exists.
           matcher: (ctx) => {
             return Boolean(
               ctx.path?.startsWith("/update-session") ||
-              (ctx.path?.startsWith("/get-session") && ctx.context.session)
+                (ctx.path?.startsWith("/get-session") && liveSession(ctx))
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
-            const originalSession = ctx.context.session;
+            const session = liveSession(ctx);
+            if (!session) {
+              return;
+            }
             try {
-              ctx.context.session =
-                ctx.context.session ?? ctx.context.newSession;
-              const { token } = await jwt.endpoints.getToken({
-                ...ctx,
-                headers: {},
-                method: "GET",
-                asResponse: false,
-                returnHeaders: false,
-                returnStatus: false,
-              });
+              const token = await signConvexJwt(ctx, session);
               const jwtCookie = ctx.context.createAuthCookie(JWT_COOKIE_NAME, {
                 maxAge: jwtExpirationSeconds,
               });
@@ -348,23 +419,40 @@ export const convex = (opts: {
             } catch (_err) {
               // no-op
             }
-            ctx.context.session = originalSession;
           }),
         },
         {
+          // Expire the Convex JWT cookie on requests that start a new
+          // session (so a cached JWT for the previous session is never
+          // served) or end one. The cookie is set again by /convex/token
+          // or the next /get-session with a valid session.
+          //
+          // Besides the paths below, this matches any request that ends
+          // with a different session than it started with: Better Auth
+          // records every session cookie it sets as ctx.context.newSession,
+          // so this also covers endpoints that switch accounts without a
+          // sign-in path (multi-session set-active, impersonation, email
+          // verification's auto sign-in, plugin callbacks). A refresh of
+          // the same session (/get-session, /update-session, /update-user)
+          // keeps its id and doesn't match, so the cookie the hook above
+          // just set is kept. The paths stay listed because twoFactor
+          // clears newSession when it holds a sign-in for the second
+          // factor.
           matcher: (ctx) => {
+            const newSessionId = ctx.context.newSession?.session.id;
             return Boolean(
-              ctx.path?.startsWith("/sign-in") ||
-              ctx.path?.startsWith("/sign-up") ||
-              ctx.path?.startsWith("/callback") ||
-              ctx.path?.startsWith("/oauth2/callback") ||
-              ctx.path?.startsWith("/magic-link/verify") ||
-              ctx.path?.startsWith("/email-otp/verify-email") ||
-              ctx.path?.startsWith("/phone-number/verify") ||
-              ctx.path?.startsWith("/siwe/verify") ||
-              ctx.path?.startsWith("/sign-out") ||
-              ctx.path?.startsWith("/delete-user") ||
-              (ctx.path?.startsWith("/get-session") && !ctx.context.session)
+              (newSessionId &&
+                newSessionId !== ctx.context.session?.session.id) ||
+                ctx.path?.startsWith("/sign-in") ||
+                ctx.path?.startsWith("/sign-up") ||
+                ctx.path?.startsWith("/callback") ||
+                ctx.path?.startsWith("/magic-link/verify") ||
+                ctx.path?.startsWith("/email-otp/verify-email") ||
+                ctx.path?.startsWith("/phone-number/verify") ||
+                ctx.path?.startsWith("/siwe/verify") ||
+                ctx.path?.startsWith("/sign-out") ||
+                ctx.path?.startsWith("/delete-user") ||
+                (ctx.path?.startsWith("/get-session") && !liveSession(ctx))
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
@@ -376,27 +464,49 @@ export const convex = (opts: {
         },
       ],
     },
+    // Endpoint keys are prefixed with "Convex" because Better Auth merges
+    // plugin endpoints by key: the jwt plugin's own `getToken`/`getJwks`, or
+    // another plugin's `getOpenIdConfig`, would otherwise shadow these when an
+    // app adds those plugins itself (#395). Client paths are
+    // derived from the endpoint path, so `authClient.convex.token()` is
+    // unchanged.
     endpoints: {
-      getOpenIdConfig: createAuthEndpoint(
+      getConvexOpenIdConfig: createAuthEndpoint(
         "/convex/.well-known/openid-configuration",
         {
           method: "GET",
           metadata: {
             isAction: false,
           },
-          // TODO: properly type this
         },
         async (ctx) => {
-          const response = await oidcProvider.endpoints.getOpenIdConfig({
-            ...ctx,
-            asResponse: false,
-            returnHeaders: false,
-            returnStatus: false,
+          // OpenID Connect discovery document for Convex's `domain`-style
+          // auth provider (and anything else that discovers the issuer).
+          // The plugin issues JWTs from `/convex/token` for an existing
+          // session; it is not an authorization server, so no authorization,
+          // token, userinfo, registration or end-session endpoint is
+          // advertised (nothing serves the `/oauth2/*` paths since Better
+          // Auth 1.7 removed the oidcProvider plugin). Convex reads only
+          // `issuer` and `jwks_uri`; the capability lists are the ones OpenID
+          // Connect Discovery requires.
+          return ctx.json({
+            issuer,
+            jwks_uri: jwksUri,
+            response_types_supported: ["id_token"],
+            subject_types_supported: ["public"],
+            id_token_signing_alg_values_supported: [
+              jwtOptions.jwks.keyPairConfig.alg,
+            ],
+            // Claims every token carries: the registered claims the jwt
+            // plugin always sets, plus `iat` and the session id this plugin
+            // adds. `nbf` and `jti` are set only if `definePayload` returns
+            // them, and the rest of the payload comes from `definePayload`
+            // (by default the user's fields), so none of those are listed.
+            claims_supported: ["sub", "iss", "aud", "exp", "iat", "sessionId"],
           });
-          return response;
         }
       ),
-      getJwks: createAuthEndpoint(
+      getConvexJwks: createAuthEndpoint(
         "/convex/jwks",
         {
           method: "GET",
@@ -484,13 +594,22 @@ export const convex = (opts: {
           },
         },
         async (ctx) => {
-          const response = await jwt.endpoints.getJwks({
-            ...ctx,
-            asResponse: false,
-            returnHeaders: false,
-            returnStatus: false,
-          });
-          return response;
+          const getKeys = async () =>
+            (
+              await jwt.endpoints.getJwks({
+                ...ctx,
+                asResponse: false,
+                returnHeaders: false,
+                returnStatus: false,
+              })
+            ).keys.filter(isConvexKey);
+          // Only the keys Convex JWTs are signed with
+          let keys = await getKeys();
+          if (keys.length === 0 && !opts.jwks) {
+            await createJwk(ctx, jwt.options);
+            keys = await getKeys();
+          }
+          return ctx.json({ keys });
         }
       ),
       getLatestJwks: createAuthEndpoint(
@@ -509,25 +628,7 @@ export const convex = (opts: {
           },
         },
         async (ctx) => {
-          // Ensure at least one key exists
-          await jwtPlugin(jwtOptions).endpoints.getJwks({
-            ...ctx,
-            method: "GET",
-            asResponse: false,
-            returnHeaders: false,
-            returnStatus: false,
-          });
-          const jwks: any[] = await ctx.context.adapter.findMany({
-            model: "jwks",
-            limit: 1,
-            sortBy: {
-              field: "createdAt",
-              direction: "desc",
-            },
-          });
-          // Add alg to jwks, otherwise Better Auth will default to EdDSA
-          jwks[0].alg = jwtOptions.jwks.keyPairConfig.alg;
-          return jwks;
+          return await latestConvexKey(ctx);
         }
       ),
       rotateKeys: createAuthEndpoint(
@@ -546,31 +647,12 @@ export const convex = (opts: {
           },
         },
         async (ctx) => {
-          await ctx.context.adapter.deleteMany({
-            model: "jwks",
-            where: [],
-          });
-
-          await jwtPlugin(jwtOptions).endpoints.getJwks({
-            ...ctx,
-            method: "GET",
-            asResponse: false,
-            returnHeaders: false,
-            returnStatus: false,
-          });
-          const jwks: any[] = await ctx.context.adapter.findMany({
-            model: "jwks",
-            limit: 1,
-            sortBy: {
-              field: "createdAt",
-              direction: "desc",
-            },
-          });
-          jwks[0].alg = jwtOptions.jwks.keyPairConfig.alg;
-          return jwks;
+          // Keys of other plugins, such as Better Auth's jwt plugin, stay
+          await deleteConvexKeys(ctx);
+          return await latestConvexKey(ctx);
         }
       ),
-      getToken: createAuthEndpoint(
+      getConvexToken: createAuthEndpoint(
         "/convex/token",
         {
           method: "GET",
@@ -601,17 +683,12 @@ export const convex = (opts: {
         },
         async (ctx) => {
           const runEndpoint = async () => {
-            const response = await jwt.endpoints.getToken({
-              ...ctx,
-              asResponse: false,
-              returnHeaders: false,
-              returnStatus: false,
-            });
+            const token = await signConvexJwt(ctx, ctx.context.session);
             const jwtCookie = ctx.context.createAuthCookie(JWT_COOKIE_NAME, {
               maxAge: jwtExpirationSeconds,
             });
-            ctx.setCookie(jwtCookie.name, response.token, jwtCookie.attributes);
-            return response;
+            ctx.setCookie(jwtCookie.name, token, jwtCookie.attributes);
+            return ctx.json({ token });
           };
           try {
             return await runEndpoint();
@@ -620,10 +697,7 @@ export const convex = (opts: {
             // roll the keys
             if (!opts.jwks && error?.code === "ERR_JOSE_NOT_SUPPORTED") {
               if (opts.jwksRotateOnTokenGenerationError) {
-                await ctx.context.adapter.deleteMany({
-                  model: "jwks",
-                  where: [],
-                });
+                await deleteConvexKeys(ctx);
                 return await runEndpoint();
               } else {
                 // eslint-disable-next-line no-console

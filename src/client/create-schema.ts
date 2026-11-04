@@ -1,4 +1,5 @@
 import type { BetterAuthDBSchema, DBFieldAttribute } from "better-auth/db";
+import { assertNoCompoundUniqueIndexes } from "./adapter-utils.js";
 
 const resolveCdTarget = (
   relativeDir: string | null,
@@ -16,12 +17,19 @@ const resolveCdTarget = (
 // Manually add fields to index on for schema generation,
 // all fields in the schema specialFields are automatically indexed
 export const indexFields = {
-  account: ["accountId", ["accountId", "providerId"], ["providerId", "userId"]],
-  rateLimit: ["key"],
+  account: [
+    "accountId",
+    ["accountId", "providerId"],
+    // findCredentialAccount: Better Auth 1.7 looks the credential account up
+    // by all three on every set, change and reset password.
+    ["accountId", "providerId", "userId"],
+    ["providerId", "userId"],
+  ],
+  // lastRequest: Better Auth prunes expired rows by it.
+  rateLimit: ["key", "lastRequest"],
   session: ["expiresAt", ["expiresAt", "userId"]],
   verification: ["expiresAt", "identifier"],
   user: [["email", "name"], "name", "userId"],
-  oauthConsent: [["clientId", "userId"]],
 };
 
 // Return map of unique, sortable, and reference fields
@@ -50,25 +58,52 @@ const specialFields = (tables: BetterAuthDBSchema) =>
       )
   );
 
-const mergedIndexFields = (tables: BetterAuthDBSchema) =>
+const mergedIndexFields = (
+  tables: BetterAuthDBSchema
+): Record<string, string[][]> =>
   Object.fromEntries(
     Object.entries(tables).map(([key, table]) => {
-      const manualIndexes =
-        indexFields[key as keyof typeof indexFields]?.map((index) => {
-          return typeof index === "string"
-            ? (table.fields[index]?.fieldName ?? index)
-            : index.map((i) => table.fields[i]?.fieldName ?? i);
-        }) || [];
+      const fieldName = (field: string) =>
+        table.fields[field]?.fieldName ?? field;
+      // Convex indexes are matched by sorted field prefix (see findIndex in
+      // adapter-utils), so compound indexes are emitted in sorted field order.
+      const sorted = (index: string[]) => [...index].sort();
+      const manualIndexes = (
+        indexFields[key as keyof typeof indexFields] ?? []
+      ).map((index) =>
+        sorted(
+          typeof index === "string"
+            ? [fieldName(index)]
+            : index.map((i) => fieldName(i))
+        )
+      );
+      // Table-level indexes declared by Better Auth core or plugins (1.7
+      // `indexes: [{ fields, unique }]`), in declared order.
+      const schemaIndexes = (table.indexes ?? []).map((index) =>
+        sorted(index.fields.map((field) => fieldName(field)))
+      );
+      // Single-field indexes for unique/sortable/reference fields, unless
+      // an index above already starts with that field.
       const specialFieldIndexes = Object.keys(
         specialFields(tables)[key as keyof ReturnType<typeof specialFields>] ||
           {}
-      ).filter(
-        (index) =>
-          !manualIndexes.some((m) =>
-            Array.isArray(m) ? m[0] === index : m === index
-          )
-      );
-      return [key, manualIndexes.concat(specialFieldIndexes)];
+      )
+        .filter(
+          (field) =>
+            !manualIndexes.concat(schemaIndexes).some((m) => m[0] === field)
+        )
+        .map((field) => [field]);
+      const indexes: string[][] = [];
+      for (const index of [
+        ...manualIndexes,
+        ...specialFieldIndexes,
+        ...schemaIndexes,
+      ]) {
+        if (!indexes.some((i) => i.join("_") === index.join("_"))) {
+          indexes.push(index);
+        }
+      }
+      return [key, indexes];
     })
   );
 
@@ -79,6 +114,7 @@ export const createSchema = async ({
   tables: BetterAuthDBSchema;
   file?: string;
 }) => {
+  assertNoCompoundUniqueIndexes(tables);
   // Hide these node builtins from Convex's esbuild so it doesn't try to
   // resolve them at bundle time. Only runs from the better-auth CLI.
   const path = await import(["p", "a", "t", "h"].join(""));
@@ -164,10 +200,7 @@ export const tables = {
     }
 
     const indexes =
-      mergedIndexFields(tables)[
-        tableKey as keyof typeof mergedIndexFields
-      ]?.map((index) => {
-        const indexArray = Array.isArray(index) ? index.sort() : [index];
+      mergedIndexFields(tables)[tableKey]?.map((indexArray) => {
         const indexName = indexArray.join("_");
         return `.index("${indexName}", ${JSON.stringify(indexArray)})`;
       }) || [];

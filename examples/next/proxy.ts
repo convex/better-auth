@@ -23,6 +23,6 @@ export default async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run middleware on all routes except static assets and api routes
-  matcher: ["/((?!.*\\..*|_next|api/auth).+)", "/trpc(.*)"],
+  // Run on all routes, including "/", except static assets and api routes
+  matcher: ["/((?!.*\\..*|_next|api/auth).*)", "/trpc(.*)"],
 };

@@ -228,6 +228,74 @@ describe("crossDomainClient", () => {
       expect(result["better-auth.convex_jwt"]).toBeUndefined();
     });
 
+    it("doesn't clear a session stored while an empty get-session was in flight", async () => {
+      // The request went out signed out...
+      const sentCookie = "better-auth.two_factor=challenge";
+      // ...and a one-time token was redeemed before the answer came back.
+      storage.set(cookieName, JSON.stringify({
+        "better-auth.two_factor": { value: "challenge", expires: null },
+        "better-auth.session_token": { value: "redeemed", expires: null },
+      }));
+
+      const onSuccess = getOnSuccessHook();
+      await onSuccess({
+        data: null,
+        request: {
+          url: new URL("https://example.com/api/auth/get-session"),
+          headers: new Headers({ "better-auth-cookie": sentCookie }),
+        },
+        response: { headers: new Headers() },
+      } as any);
+
+      const result = JSON.parse(storage.get(cookieName)!);
+      expect(result["better-auth.session_token"]).toEqual({ value: "redeemed", expires: null });
+    });
+
+    it("clears the session when get-session rejected the cookie that was sent", async () => {
+      const stored = {
+        "better-auth.session_token": { value: "stale", expires: null },
+      };
+      storage.set(cookieName, JSON.stringify(stored));
+
+      const onSuccess = getOnSuccessHook();
+      await onSuccess({
+        data: null,
+        request: {
+          url: new URL("https://example.com/api/auth/get-session"),
+          headers: new Headers({
+            "better-auth-cookie": "better-auth.session_token=stale",
+          }),
+        },
+        response: { headers: new Headers() },
+      } as any);
+
+      expect(storage.get(cookieName)).toBe("{}");
+    });
+
+    it("still clears a rejected session when only an unrelated cookie changed", async () => {
+      storage.set(cookieName, JSON.stringify({
+        "better-auth.session_token": { value: "stale", expires: null },
+        "better-auth.two_factor": { value: "new-challenge", expires: null },
+      }));
+
+      const onSuccess = getOnSuccessHook();
+      await onSuccess({
+        data: null,
+        request: {
+          url: new URL("https://example.com/api/auth/get-session"),
+          headers: new Headers({
+            "better-auth-cookie":
+              "better-auth.session_token=stale; better-auth.two_factor=old-challenge",
+          }),
+        },
+        response: { headers: new Headers() },
+      } as any);
+
+      const result = JSON.parse(storage.get(cookieName)!);
+      expect(result["better-auth.session_token"]).toBeUndefined();
+      expect(result["better-auth.two_factor"]).toEqual({ value: "new-challenge", expires: null });
+    });
+
     it("preserves cookies when get-session returns data", async () => {
       const existingCookies = JSON.stringify({
         "better-auth.session_token": { value: "valid", expires: null },

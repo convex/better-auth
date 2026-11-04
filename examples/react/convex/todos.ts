@@ -5,9 +5,10 @@ import { authComponent } from "./auth";
 export const get = query({
   args: {},
   handler: async (ctx) => {
-    const user = await authComponent.getAuthUser(ctx);
+    // Empty rather than an error while a sign-out is still propagating
+    const user = await authComponent.safeGetAuthUser(ctx);
     if (!user) {
-      throw new ConvexError("Unauthenticated");
+      return [];
     }
     return await ctx.db
       .query("todos")

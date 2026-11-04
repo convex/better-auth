@@ -152,9 +152,9 @@ export default function SignIn() {
   };
 
   const handleSlackSignIn = async () => {
-    await authClient.signIn.oauth2(
+    await authClient.signIn.social(
       {
-        providerId: "slack",
+        provider: "slack",
       },
       {
         onRequest: () => {

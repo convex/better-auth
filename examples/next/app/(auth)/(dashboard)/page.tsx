@@ -1,4 +1,3 @@
-import { Toaster } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { TodoList } from "./todo-list";
 import { Header } from "./header";
@@ -15,7 +14,6 @@ const Page = async () => {
     <div className="min-h-screen w-full p-4 space-y-8">
       <Header preloadedUserQuery={preloadedUserQuery} />
       <TodoList preloadedTodosQuery={preloadedTodosQuery} />
-      <Toaster />
     </div>
   );
 };

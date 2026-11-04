@@ -1,0 +1,47 @@
+---
+title: Security
+description: Supported versions, older versions, and advisories
+---
+
+## Supported versions
+
+Only the latest version of `@convex-dev/better-auth` gets fixes, including
+security fixes, as in Better Auth's
+[security policy](https://github.com/better-auth/better-auth/blob/main/SECURITY.md).
+To update, follow the [Upgrading](/upgrading) guide for your current version.
+
+## Older versions
+
+Each older component version depends on an older Better Auth, which may be
+affected by advisories fixed later. Check
+[Better Auth's advisories](https://github.com/better-auth/better-auth/security/advisories)
+against the Better Auth version in this table:
+
+| Component | Better Auth     |
+| --------- | --------------- |
+| 0.9       | 1.3             |
+| 0.10      | 1.4             |
+| 0.11      | 1.5             |
+| 0.12      | 1.6             |
+| Latest    | 1.7.16 or later |
+
+If your component version accepts a range of Better Auth versions, you can
+install the latest patch in that range. Otherwise, upgrade the component.
+
+## Advisories
+
+Advisories for `@convex-dev/better-auth` itself are published on
+[GitHub](https://github.com/convex/better-auth/security/advisories):
+
+| Advisory                                                                                                                                                                                       | Severity | Fixed in |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
+| [GHSA-4qvm-r4pr-v3wg](https://github.com/convex/better-auth/security/advisories/GHSA-4qvm-r4pr-v3wg): Convex JWT issued on password sign-in before two-factor authentication completes         | High     | 0.12.7   |
+| [GHSA-9qq3-v9g3-cxhw](https://github.com/convex/better-auth/security/advisories/GHSA-9qq3-v9g3-cxhw): emailed links can still use a caller-chosen host with a dynamic `baseURL`                | Medium   | 0.12.7   |
+| [GHSA-j8qq-g9pm-v3c2](https://github.com/convex/better-auth/security/advisories/GHSA-j8qq-g9pm-v3c2): cross-domain plugin can deliver a session token to a trusted origin an attacker controls | High     | 0.12.6   |
+| [GHSA-pgx2-m66h-x29f](https://github.com/convex/better-auth/security/advisories/GHSA-pgx2-m66h-x29f): emailed links can point at an attacker's host with a dynamic `baseURL`                   | Medium   | 0.12.6   |
+
+## Reporting a vulnerability
+
+Report potential vulnerabilities to
+[security@convex.dev](mailto:security@convex.dev), and please don't disclose
+them publicly until we have addressed them.

@@ -2,6 +2,10 @@ import { api } from "@/convex/_generated/api";
 import { useMutation } from "convex/react";
 import { Id } from "@/convex/_generated/dataModel";
 
+// Optimistic todos get a placeholder id until the server assigns a real one.
+// Buttons on a placeholder are disabled, since the server can't act on it.
+export const isPlaceholder = (id: string) => id.startsWith("optimistic:");
+
 // Mutations w/ optimistic updates
 export const useCreateTodo = () =>
   useMutation(api.todos.create).withOptimisticUpdate((localStore, args) => {
@@ -15,7 +19,7 @@ export const useCreateTodo = () =>
     }
     localStore.setQuery(api.todos.get, {}, [
       {
-        _id: crypto.randomUUID() as Id<"todos">,
+        _id: `optimistic:${crypto.randomUUID()}` as Id<"todos">,
         _creationTime: Date.now(),
         text: args.text,
         completed: false,

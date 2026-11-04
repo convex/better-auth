@@ -7,8 +7,8 @@ description: Debugging Convex + Better Auth
 
 ### Backend
 
-Verbose logs from the Better Auth component can be enabled on the component
-constructor.
+Turn on verbose logs in the component constructor. The component then logs the
+configured `baseURL` and the request and response headers of each auth request.
 
 ```ts title="convex/auth.ts"
 export const authComponent = createClient(
@@ -19,6 +19,38 @@ export const authComponent = createClient(
   }
 );
 ```
+
+<Callout type="warn">
+  Anyone with access to your deployment logs can read verbose logs, so enable
+  them only while debugging. The component redacts credential headers
+  (`Cookie`, `Authorization`, `Set-Cookie`, `Better-Auth-Cookie`,
+  `Set-Better-Auth-Cookie`, `Set-Auth-Token`, `Set-Auth-JWT`, `X-Api-Key`) and
+  the query strings of `Location` and `Referer`; other headers are logged as
+  they are.
+</Callout>
+
+### Database adapter
+
+Better Auth's adapter debug logs show every database read and write the adapter
+makes. Turn them on with `debugLogs`, which takes the same values as Better
+Auth's adapter `debugLogs` option: `true`, or an object that turns on single
+methods, such as `{ findOne: true }`.
+
+```ts title="convex/auth.ts"
+export const authComponent = createClient(
+  components.betterAuth,
+  // [!code ++:3]
+  {
+    debugLogs: true,
+  }
+);
+```
+
+<Callout type="warn">
+  Adapter debug logs print full database rows without redaction, including
+  session tokens, password hashes, OAuth tokens and verification values such as
+  password reset tokens and one-time codes. Enable them only while debugging.
+</Callout>
 
 ### Client side
 
