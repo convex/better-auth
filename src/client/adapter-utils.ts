@@ -849,15 +849,37 @@ export const paginate = async <
     if (!inValues.length) {
       return { page: [], isDone: true, continueCursor: "" };
     }
+    // Each unique session token owns at most one row. Look it up through
+    // the token-only index and filter expiry afterward, so creation-order
+    // merging cannot be replaced by an unrelated expiration range order.
+    // Other models and unindexed sorts keep the native unservedSort contract.
+    const table = schema.tables[args.model];
+    const uniqueSessionTokens =
+      args.model === "session" &&
+      inWhere.field === "token" &&
+      isUniqueField(betterAuthSchema, args.model, "token") &&
+      (!args.sortBy || args.sortBy.field === "createdAt") &&
+      table !== undefined &&
+      table[" indexes"]().some(
+        ({ fields }: { fields: string[] }) =>
+          fields.length === 1 && fields[0] === "token"
+      );
     const branchArgs = (value: (typeof inValues)[number]) => ({
       ...args,
-      where: args.where?.map((w) =>
-        w === inWhere ? { ...w, operator: "eq" as const, value } : w
-      ),
+      where: uniqueSessionTokens
+        ? [{ ...inWhere, operator: "eq" as const, value }]
+        : args.where?.map((w) =>
+            w === inWhere ? { ...w, operator: "eq" as const, value } : w
+          ),
     });
-    const streams = inValues.map((value) =>
-      generateQuery(ctx, schema, branchArgs(value))
-    );
+    const streams = inValues.map((value) => {
+      const query = generateQuery(ctx, schema, branchArgs(value));
+      return uniqueSessionTokens
+        ? query.filterWith(async (doc) =>
+            filterByWhere(doc, args.where, (w) => w !== inWhere)
+          )
+        : query;
+    });
     // Every branch binds the same fields, so generateQuery picks the same
     // index for each of them. convex-helpers merges streams on a key that
     // must be a suffix of the stream's index fields keeping every field after
