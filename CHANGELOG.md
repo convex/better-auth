@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.13.0
+
 - breaking: support Better Auth 1.7 (minimum 1.7.16); 1.6 is no longer supported
   (#433). Breaking changes and upgrade steps are in the
   [upgrade guide](https://labs.convex.dev/better-auth/upgrading)
