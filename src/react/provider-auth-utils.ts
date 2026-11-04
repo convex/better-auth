@@ -17,10 +17,11 @@ function getTokenPayload(token: unknown): JWTPayload | null {
     return null;
   }
   try {
-    const encodedPayload = token
-      .split(".")[1]
-      ?.replace(/\+/g, "-")
-      .replace(/\//g, "_");
+    const segments = token.split(".");
+    if (segments.length !== 3) {
+      return null;
+    }
+    const encodedPayload = segments[1]?.replace(/\+/g, "-").replace(/\//g, "_");
     if (
       !encodedPayload ||
       !/^[A-Za-z0-9_-]+={0,2}$/.test(encodedPayload) ||

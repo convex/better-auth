@@ -45,6 +45,8 @@ test.each([
   12,
   "",
   "header.signature",
+  `header.${payload}`,
+  `header.${payload}.signature.extra`,
   "header.!.signature",
   "header.a.signature",
   `header.${payload}=invalid.signature`,
