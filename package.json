@@ -146,6 +146,7 @@
   "module": "./dist/client/index.js",
   "dependencies": {
     "@better-auth/core": "1.6.15",
+    "@better-auth/utils": "^0.4.1",
     "@better-fetch/fetch": "^1.1.18",
     "common-tags": "^1.8.2",
     "convex-helpers": "^0.1.128",

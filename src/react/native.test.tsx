@@ -20,6 +20,7 @@ test.each([undefined, {}])(
       JSON.stringify({ sessionId: "session_1", exp: Date.now() / 1000 + 900 })
     ).toString("base64url");
     const initialToken = `header.${payload}.signature`;
+    vi.stubGlobal("atob", undefined);
     let fetchAccessToken!: (options: {
       forceRefreshToken: boolean;
     }) => Promise<string | null>;

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect } from "react";
 import { logger } from "@better-auth/core/env";
+import { base64Url } from "@better-auth/utils/base64";
 import type { JWTPayload } from "jose";
 
 // Bound each request and retry burst, not the authentication lifetime. Convex
@@ -12,19 +13,35 @@ export const useProviderLifecycleEffect =
     ? useEffect
     : useLayoutEffect;
 function getTokenPayload(token: unknown): JWTPayload | null {
-  if (typeof token !== "string" || typeof globalThis.atob !== "function") {
+  if (typeof token !== "string") {
     return null;
   }
   try {
-    const encodedPayload = token.split(".")[1];
-    const normalizedPayload = encodedPayload
-      .replace(/-/g, "+")
-      .replace(/_/g, "/");
-    const paddedPayload = normalizedPayload.padEnd(
-      Math.ceil(normalizedPayload.length / 4) * 4,
-      "="
-    );
-    return JSON.parse(globalThis.atob(paddedPayload)) as JWTPayload;
+    const encodedPayload = token
+      .split(".")[1]
+      ?.replace(/\+/g, "-")
+      .replace(/\//g, "_");
+    if (
+      !encodedPayload ||
+      !/^[A-Za-z0-9_-]+={0,2}$/.test(encodedPayload) ||
+      (encodedPayload.includes("=") && encodedPayload.length % 4 !== 0)
+    ) {
+      return null;
+    }
+    const bytes = base64Url.decode(encodedPayload);
+    if (
+      base64Url.encode(bytes, { padding: false }) !==
+      encodedPayload.replace(/=+$/, "")
+    ) {
+      return null;
+    }
+    // JWT payloads are UTF-8. Native runtimes need neither browser atob nor
+    // Node Buffer/TextDecoder globals to recover the JSON text.
+    const utf8 = Array.from(
+      bytes,
+      (byte) => `%${byte.toString(16).padStart(2, "0")}`
+    ).join("");
+    return JSON.parse(decodeURIComponent(utf8)) as JWTPayload;
   } catch {
     return null;
   }
