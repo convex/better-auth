@@ -1875,10 +1875,19 @@ describe("backend behaviour (live deployment)", () => {
       const total = 32_000 + 100;
       const batch = 4_000;
       for (let start = 0; start < total; start += batch) {
-        await liveClient().mutation(anyApi.harness.insertBulk, {
-          start,
-          count: Math.min(batch, total - start),
-        });
+        const args = { start, count: Math.min(batch, total - start) };
+        // The local backend caps bytes written per second; wait it out.
+        for (let attempt = 0; ; attempt++) {
+          try {
+            await liveClient().mutation(anyApi.harness.insertBulk, args);
+            break;
+          } catch (error) {
+            if (attempt >= 5 || !/TooManyWrites/.test(String(error))) {
+              throw error;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1_000));
+          }
+        }
       }
       // Whichever per-function limit trips first (documents read, or the
       // system-operations budget the reads consume), the failure is loud.
