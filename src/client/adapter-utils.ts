@@ -1,6 +1,6 @@
 import { asyncMap } from "convex-helpers";
 import { v } from "convex/values";
-import type { GenericId, Infer } from "convex/values";
+import type { Infer } from "convex/values";
 import type {
   DocumentByName,
   GenericDataModel,
@@ -58,6 +58,57 @@ export const adapterArgsValidator = v.object({
   offset: v.optional(v.number()),
 });
 
+// Compound unique indexes can't be enforced by this adapter. Fail when the
+// schema is generated or loaded rather than accept writes that violate them.
+export const assertNoCompoundUniqueIndexes = (
+  betterAuthSchema: BetterAuthDBSchema
+) => {
+  for (const [key, table] of Object.entries(betterAuthSchema)) {
+    for (const index of table.indexes ?? []) {
+      if (index.unique && index.fields.length > 1) {
+        throw new Error(
+          `${table.modelName ?? key}: compound unique index [${index.fields.join(", ")}] is not supported by the Convex adapter`
+        );
+      }
+    }
+  }
+};
+
+// Better Auth 1.7 plugins can declare uniqueness as a table-level index
+// (`indexes: [{ fields: ["deviceCode"], unique: true }]`, e.g.
+// device-authorization) instead of field-level `unique: true`. Mark the field
+// of each single-field unique index as unique so the field-level checks below
+// enforce it. Compound unique indexes throw (assertNoCompoundUniqueIndexes).
+export const withTableLevelUniqueFields = (
+  betterAuthSchema: BetterAuthDBSchema
+): BetterAuthDBSchema => {
+  assertNoCompoundUniqueIndexes(betterAuthSchema);
+  return Object.fromEntries(
+    Object.entries(betterAuthSchema).map(([key, table]) => {
+      const uniqueFields = (table.indexes ?? [])
+        .filter((index) => index.unique && index.fields.length === 1)
+        .map((index) => index.fields[0]);
+      if (!uniqueFields.length) {
+        return [key, table];
+      }
+      return [
+        key,
+        {
+          ...table,
+          fields: Object.fromEntries(
+            Object.entries(table.fields).map(([field, attribute]) => [
+              field,
+              uniqueFields.includes(field)
+                ? { ...attribute, unique: true }
+                : attribute,
+            ])
+          ),
+        },
+      ];
+    })
+  );
+};
+
 const isUniqueField = (
   betterAuthSchema: BetterAuthDBSchema,
   model: string,
@@ -69,23 +120,33 @@ const isUniqueField = (
   if (!fields) {
     return false;
   }
+  // Adapter inputs and where clauses use the stored (Convex) field name.
   return Object.entries(fields)
     .filter(([, value]) => value.unique)
-    .map(([key]) => key)
+    .map(([key, value]) => value.fieldName ?? key)
     .includes(field);
 };
+// Null and unset values are never unique-constrained (SQL unique index
+// semantics), so they don't count as setting a unique field.
 export const hasUniqueFields = (
   betterAuthSchema: BetterAuthDBSchema,
   model: string,
   input: Record<string, any>
 ) => {
-  for (const field of Object.keys(input)) {
-    if (isUniqueField(betterAuthSchema, model, field)) {
+  for (const [field, value] of Object.entries(input)) {
+    if (value != null && isUniqueField(betterAuthSchema, model, field)) {
       return true;
     }
   }
   return false;
 };
+
+// `eq null` must match unset fields as well as explicit nulls (SQL `IS NULL`):
+// Convex omits never-written optional fields, and the 1.7 adapter factory
+// drops undefined fields from writes. A Convex index range `q.eq(field, null)`
+// only matches explicit nulls, so these clauses are always filtered statically.
+const isNullEq = (w: { operator?: string; value: unknown }) =>
+  (!w.operator || w.operator === "eq") && w.value === null;
 
 const findIndex = (
   schema: SchemaDefinition<any, any>,
@@ -129,7 +190,8 @@ const findIndex = (
         ["lt", "lte", "gt", "gte", "eq", "in", "not_in"].includes(
           w.operator
         )) &&
-      w.field !== "_id"
+      w.field !== "_id" &&
+      !isNullEq(w)
     );
   });
   if (!where?.length && !args.sortBy) {
@@ -249,30 +311,139 @@ export const checkUniqueFields = async <
   if (!hasUniqueFields(betterAuthSchema, table, input)) {
     return;
   }
-  for (const field of Object.keys(input)) {
-    if (!isUniqueField(betterAuthSchema, table, field)) {
+  for (const [field, value] of Object.entries(input)) {
+    // Null and unset values never collide (SQL unique index semantics).
+    if (value == null || !isUniqueField(betterAuthSchema, table, field)) {
       continue;
     }
     const { index } =
       findIndex(schema, {
         model: table,
-        where: [
-          { field, operator: "eq", value: input[field as keyof typeof input] },
-        ],
+        where: [{ field, operator: "eq", value }],
       }) || {};
     if (!index) {
-      throw new Error(`No index found for ${table}${field}`);
+      throw new Error(`No index found for ${table}.${field}`);
     }
-    const existingDoc = await ctx.db
+    // take(2) rather than unique(): pre-existing duplicates must not crash
+    // the check, and the document being updated is not a conflict.
+    const existingDocs = await ctx.db
       .query(table as any)
-      .withIndex(index.indexDescriptor, (q) =>
-        q.eq(field, input[field as keyof typeof input])
-      )
-      .unique();
-    if (existingDoc && existingDoc._id !== doc?._id) {
+      .withIndex(index.indexDescriptor, (q) => q.eq(field, value))
+      .take(2);
+    if (existingDocs.some((existingDoc) => existingDoc._id !== doc?._id)) {
       throw new Error(`${table} ${field} already exists`);
     }
   }
+};
+
+// Reject the write if another document already has one of these field values.
+// Unlike checkUniqueFields, the fields needn't be unique in the schema.
+export const checkFieldsAvailable = async (
+  ctx: GenericQueryCtx<GenericDataModel>,
+  schema: SchemaDefinition<any, any>,
+  table: string,
+  input: Record<string, any>,
+  fields: string[]
+) => {
+  for (const field of fields) {
+    const value = input[field];
+    if (value === null || value === undefined) {
+      continue;
+    }
+    const { index } =
+      findIndex(schema, {
+        model: table,
+        where: [{ field, operator: "eq", value }],
+      }) || {};
+    if (!index) {
+      throw new Error(`No index found for ${table}.${field}`);
+    }
+    const existingDoc = await ctx.db
+      .query(table as any)
+      .withIndex(index.indexDescriptor, (q) => q.eq(field, value))
+      .first();
+    if (existingDoc) {
+      throw new Error(`${table} ${field} already exists`);
+    }
+  }
+};
+
+// Better Auth looks accounts up by providerId and accountId and, since 1.7,
+// fails the lookup when more than one row matches, but it never declares the
+// pair unique and reads then inserts in two calls. Reject a second account
+// with the same pair here: a Convex mutation is a transaction, so the check
+// and the insert can't interleave.
+export const checkAccountKeyAvailable = async (
+  ctx: GenericQueryCtx<GenericDataModel>,
+  schema: SchemaDefinition<any, any>,
+  betterAuthSchema: BetterAuthDBSchema,
+  table: string,
+  input: Record<string, any>
+) => {
+  const account = betterAuthSchema.account;
+  if (!account || (account.modelName ?? "account") !== table) {
+    return;
+  }
+  const providerIdField = account.fields.providerId?.fieldName ?? "providerId";
+  const accountIdField = account.fields.accountId?.fieldName ?? "accountId";
+  const providerId = input[providerIdField];
+  const accountId = input[accountIdField];
+  if (providerId == null || accountId == null) {
+    return;
+  }
+  const found = findIndex(schema, {
+    model: table,
+    where: [
+      { field: accountIdField, operator: "eq", value: accountId },
+      { field: providerIdField, operator: "eq", value: providerId },
+    ],
+  });
+  if (!found?.index) {
+    throw new Error(
+      `No index found for ${table}.${accountIdField}, ${providerIdField}`
+    );
+  }
+  const { index, values } = found;
+  const existingDoc = await ctx.db
+    .query(table as any)
+    .withIndex(index.indexDescriptor, (q: any) => {
+      for (const [idx, value] of values.eq.entries()) {
+        q = q.eq(index.fields[idx], value);
+      }
+      return q;
+    })
+    .first();
+  if (existingDoc) {
+    throw new Error(
+      `${table} with ${providerIdField} ${JSON.stringify(providerId)} and ${accountIdField} ${JSON.stringify(accountId)} already exists`
+    );
+  }
+};
+
+// Compare two field values for an in-memory sortBy. A missing or null value
+// sorts before every present value (nulls first ascending, last descending,
+// as in Better Auth's memory adapter) and missing values compare equal to
+// each other, so the comparator stays consistent when only one side is set.
+export const compareSortValues = (
+  a: unknown,
+  b: unknown,
+  direction: "asc" | "desc"
+) => {
+  const aMissing = a === undefined || a === null;
+  const bMissing = b === undefined || b === null;
+  const result =
+    aMissing && bMissing
+      ? 0
+      : aMissing
+        ? -1
+        : bMissing
+          ? 1
+          : (a as any) < (b as any)
+            ? -1
+            : (a as any) > (b as any)
+              ? 1
+              : 0;
+  return direction === "asc" ? result : -result;
 };
 
 // This handles basic select (stripping out the other fields if there
@@ -343,7 +514,7 @@ const filterByWhere = <
       switch (w.operator) {
         case undefined:
         case "eq": {
-          return value === w.value;
+          return w.value === null ? value == null : value === w.value;
         }
         case "in": {
           return Array.isArray(w.value) && (w.value as any[]).includes(value);
@@ -366,7 +537,8 @@ const filterByWhere = <
           return value === w.value || isGreaterThan(value, w.value);
         }
         case "ne": {
-          return value !== w.value;
+          // `ne null` is SQL `IS NOT NULL`: unset fields don't match either.
+          return w.value === null ? value != null : value !== w.value;
         }
         case "contains": {
           return typeof value === "string" && value.includes(w.value as string);
@@ -454,13 +626,88 @@ const generateQuery = (
       // Index used for all eq and range clauses, apply remaining clauses
       // incompatible with Convex statically.
       (w) =>
-        w.operator &&
-        ["contains", "starts_with", "ends_with", "ne", "not_in"].includes(
-          w.operator
-        )
+        isNullEq(w) ||
+        (w.operator &&
+          ["contains", "starts_with", "ends_with", "ne", "not_in"].includes(
+            w.operator
+          ))
     );
   });
   return filteredQuery;
+};
+
+// The fields a query returns rows ordered by: the fields of its index after
+// the equality prefix, ending in _creationTime, or creation order when it
+// uses no index.
+const queryOrder = (found: ReturnType<typeof findIndex>) =>
+  found?.index && found.index.indexDescriptor !== "by_creation_time"
+    ? found.index.fields.slice(found.values.eq.length)
+    : ["_creationTime"];
+
+// Set on a page when the query's order doesn't follow sortBy, which happens
+// when no index serves the sort. The client refuses the query then (see
+// assertSortServed in the client).
+// `indexFields` is the index that would serve the sort. When none can, it is
+// left out, and `rangeField` names the range on another field that orders
+// the rows first, if that is why.
+export type UnservedSort = { indexFields?: string[]; rangeField?: string };
+
+const unservedSort = (
+  args: Infer<typeof adapterArgsValidator>,
+  found: ReturnType<typeof findIndex>
+): { unservedSort?: UnservedSort } => {
+  if (!args.sortBy) {
+    return {};
+  }
+  const { field } = args.sortBy;
+  // An equality on the sort field leaves every matching row with one value.
+  if (
+    args.where?.some(
+      (w) => (!w.operator || w.operator === "eq") && w.field === field
+    )
+  ) {
+    return {};
+  }
+  // createdAt is served by _creationTime, as in findIndex.
+  const sortKey = field === "createdAt" ? "_creationTime" : field;
+  if (queryOrder(found)[0] === sortKey) {
+    return {};
+  }
+  const range = args.where?.find(
+    (w) => w.operator && ["lt", "lte", "gt", "gte"].includes(w.operator)
+  );
+  if (range && range.field !== field) {
+    return { unservedSort: { rangeField: range.field } };
+  }
+  // `in` branches merge on the index fields after the equality prefix, which
+  // never include the `in` field itself, so no index serves this sort.
+  if (args.where?.some((w) => w.operator === "in" && w.field === field)) {
+    return { unservedSort: {} };
+  }
+  return {
+    unservedSort: {
+      indexFields:
+        found && "indexFields" in found && found.indexFields
+          ? found.indexFields.map(String)
+          : [field],
+    },
+  };
+};
+
+// Look a document up by an id Better Auth passed in. Ids come from requests
+// (admin and organization routes take them from the body), so one may be
+// malformed or belong to another table; both mean "no such document" rather
+// than an error or another table's document.
+const getById = async (
+  ctx: GenericQueryCtx<GenericDataModel>,
+  table: string,
+  value: unknown
+) => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const id = ctx.db.normalizeId(table as any, value);
+  return id ? await ctx.db.get(table as any, id) : null;
 };
 
 // This is the core function for reading from the database, it parses and
@@ -508,6 +755,8 @@ export const paginate = async <
   const uniqueWhere = args.where?.find(
     (w) =>
       (!w.operator || w.operator === "eq") &&
+      // `eq null` can't use the index (see isNullEq) and may match many docs.
+      w.value !== null &&
       (isUniqueField(betterAuthSchema, args.model, w.field) ||
         w.field === "_id")
   );
@@ -518,15 +767,11 @@ export const paginate = async <
         where: [uniqueWhere],
       }) || {};
     if (uniqueWhere.field !== "_id" && !index) {
-      throw new Error(
-        `No index found for ${args.model}.${uniqueWhere.field}`
-      );
+      throw new Error(`No index found for ${args.model}.${uniqueWhere.field}`);
     }
     const doc =
       uniqueWhere.field === "_id"
-        ? // Unfortunately this is one place where tests pass in UUIDs as values and convex-test doesn't support them
-          // eslint-disable-next-line @convex-dev/explicit-table-ids
-          await ctx.db.get(uniqueWhere.value as GenericId<T>)
+        ? await getById(ctx, args.model, uniqueWhere.value)
         : await ctx.db
             .query(args.model as any)
             .withIndex(index?.indexDescriptor as any, (q) =>
@@ -568,7 +813,7 @@ export const paginate = async <
     // For ids, just use asyncMap + .get()
     if (inWhere.field === "_id") {
       const docs = await asyncMap(inWhere.value as any[], async (value) => {
-        return ctx.db.get(args.model, value as GenericId<T>);
+        return getById(ctx, args.model, value);
       });
       const filteredDocs = docs
         .flatMap((doc) => (doc ? [doc] : []))
@@ -583,18 +828,11 @@ export const paginate = async <
                 : (b._creationTime as number) - (a._creationTime as number);
             }
             if (args.sortBy) {
-              const aValue = a[args.sortBy.field as keyof typeof a];
-              const bValue = b[args.sortBy.field as keyof typeof b];
-              if (aValue === bValue) {
-                return 0;
-              }
-              return args.sortBy.direction === "asc"
-                ? aValue! > bValue!
-                  ? 1
-                  : -1
-                : aValue! > bValue!
-                  ? -1
-                  : 1;
+              return compareSortValues(
+                a[args.sortBy.field as keyof typeof a],
+                b[args.sortBy.field as keyof typeof b],
+                args.sortBy.direction
+              );
             }
             return 0;
           })
@@ -604,27 +842,38 @@ export const paginate = async <
         continueCursor: "",
       };
     }
-    const streams = inWhere.value.map((value) => {
-      return generateQuery(ctx, schema, {
-        ...args,
-        where: args.where?.map((w) => {
-          if (w === inWhere) {
-            return { ...w, operator: "eq", value };
-          }
-          return w;
-        }),
-      });
+    // A repeated value would be a repeated stream, and so repeated rows.
+    const inValues = inWhere.value.filter(
+      (value, idx, all) => all.indexOf(value) === idx
+    );
+    if (!inValues.length) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+    const branchArgs = (value: (typeof inValues)[number]) => ({
+      ...args,
+      where: args.where?.map((w) =>
+        w === inWhere ? { ...w, operator: "eq" as const, value } : w
+      ),
     });
-    const result = await mergedStream(
-      streams,
-      [
-        args.sortBy?.field !== "createdAt" && args.sortBy?.field,
-        "_creationTime",
-      ].flatMap((f) => (f ? [f] : []))
-    ).paginate(paginationOpts);
+    const streams = inValues.map((value) =>
+      generateQuery(ctx, schema, branchArgs(value))
+    );
+    // Every branch binds the same fields, so generateQuery picks the same
+    // index for each of them. convex-helpers merges streams on a key that
+    // must be a suffix of the stream's index fields keeping every field after
+    // the equality prefix, so order the merge by exactly those fields (ending
+    // in _creationTime). `_creationTime` alone is only right when the `in`
+    // field is the last field of its index.
+    const found = findIndex(schema, branchArgs(inValues[0]!));
+    const result = await mergedStream(streams, queryOrder(found)).paginate(
+      paginationOpts
+    );
     return {
       ...result,
       page: result.page.map((doc) => selectFields(doc, args.select)),
+      // Judged on args, not the branch: an `in` on the sort field is not an
+      // equality, so the merged rows are not sorted by it.
+      ...unservedSort(args, found),
     };
   }
 
@@ -633,6 +882,7 @@ export const paginate = async <
   return {
     ...result,
     page: result.page.map((doc) => selectFields(doc, args.select)),
+    ...unservedSort(args, findIndex(schema, args)),
   };
 };
 
@@ -645,13 +895,33 @@ export const listOne = async <
   betterAuthSchema: BetterAuthDBSchema,
   args: Infer<typeof adapterArgsValidator>
 ): Promise<Doc | null> => {
-  return (
-    await paginate(ctx, schema, betterAuthSchema, {
-      ...args,
-      paginationOpts: {
-        numItems: 1,
-        cursor: null,
-      },
-    })
-  ).page[0] as Doc | null;
+  // A page comes back empty but not done when the static filter rejected
+  // every row in its budget (maximumRowsRead in paginate), so keep reading
+  // until a row turns up or the query is done. Each page reads a bounded
+  // number of rows and the cursor has to move, so the loop ends within the
+  // table.
+  let cursor: string | null = null;
+  for (;;) {
+    const result: PaginationResult<Doc> = await paginate(
+      ctx,
+      schema,
+      betterAuthSchema,
+      {
+        ...args,
+        paginationOpts: { numItems: 1, cursor },
+      }
+    );
+    if (result.page.length) {
+      return result.page[0]!;
+    }
+    if (result.isDone) {
+      return null;
+    }
+    if (result.continueCursor === cursor) {
+      throw new Error(
+        `Pagination cursor did not advance while reading ${args.model}`
+      );
+    }
+    cursor = result.continueCursor;
+  }
 };

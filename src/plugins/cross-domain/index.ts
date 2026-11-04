@@ -2,13 +2,9 @@ import type { BetterAuthPlugin } from "better-auth";
 import { setSessionCookie } from "better-auth/cookies";
 import { generateRandomString } from "better-auth/crypto";
 import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
-import { oneTimeToken as oneTimeTokenPlugin } from "better-auth/plugins/one-time-token";
 import { z } from "zod";
-import { VERSION } from "../../version.js";
 
 export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
-  const oneTimeToken = oneTimeTokenPlugin();
-
   // Origins from trustedOrigins that name a single http(s) origin. Wildcard
   // patterns and custom schemes are excluded.
   const exactTrustedOrigins = (trustedOrigins: string[]) => {
@@ -45,7 +41,6 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
 
   return {
     id: "cross-domain",
-    version: VERSION,
     // Adds siteUrl to trustedOrigins so the one-time token is issued
     // for redirects to it even when the app's own list omits it.
     init() {
@@ -128,7 +123,6 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
               ctx.body &&
               !ctx.body.callbackURL &&
               (ctx.path?.startsWith("/sign-in/social") ||
-                ctx.path?.startsWith("/sign-in/oauth2") ||
                 ctx.path?.startsWith("/sign-in/magic-link") ||
                 ctx.path?.startsWith("/send-verification-email"))
             ) {
@@ -174,7 +168,6 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
           matcher: (ctx) => {
             return Boolean(
               (ctx.path?.startsWith("/callback") ||
-                ctx.path?.startsWith("/oauth2/callback") ||
                 ctx.path?.startsWith("/magic-link/verify")) &&
               !isExpoNative(ctx)
             );
@@ -204,7 +197,7 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
             const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
             await ctx.context.internalAdapter.createVerificationValue({
               value: session.session.token,
-              identifier: `one-time-token:${token}`,
+              identifier: `cross-domain-ott:${token}`,
               expiresAt,
             });
             url.searchParams.set("ott", token);
@@ -214,7 +207,10 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
       ],
     },
     endpoints: {
-      verifyOneTimeToken: createAuthEndpoint(
+      // Own endpoint key and storage prefix: Better Auth merges plugin
+      // endpoints by key, so sharing `verifyOneTimeToken` with its
+      // oneTimeToken plugin would drop whichever plugin is listed first.
+      verifyCrossDomainOneTimeToken: createAuthEndpoint(
         "/cross-domain/one-time-token/verify",
         {
           method: "POST",
@@ -223,14 +219,24 @@ export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
           }),
         },
         async (ctx) => {
-          const response = await oneTimeToken.endpoints.verifyOneTimeToken({
-            ...ctx,
-            asResponse: false,
-            returnHeaders: false,
-            returnStatus: false,
-          });
-          await setSessionCookie(ctx, response);
-          return response;
+          const verificationValue =
+            await ctx.context.internalAdapter.consumeVerificationValue(
+              `cross-domain-ott:${ctx.body.token}`
+            );
+          if (!verificationValue) {
+            throw ctx.error("BAD_REQUEST", { message: "Invalid token" });
+          }
+          const session = await ctx.context.internalAdapter.findSession(
+            verificationValue.value
+          );
+          if (!session) {
+            throw ctx.error("BAD_REQUEST", { message: "Session not found" });
+          }
+          if (new Date(session.session.expiresAt) < new Date()) {
+            throw ctx.error("BAD_REQUEST", { message: "Session expired" });
+          }
+          await setSessionCookie(ctx, session);
+          return ctx.json(session);
         }
       ),
     },

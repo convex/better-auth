@@ -51,6 +51,10 @@ const handler = async (request: Request, siteUrl: string) => {
   headers.delete("connection");
   headers.set("accept-encoding", "application/json");
   headers.set("host", new URL(siteUrl).host);
+  // The original origin travels only in x-better-auth-forwarded-*. Drop any
+  // x-forwarded-* the request arrived with so they can't be mistaken for it.
+  headers.delete("x-forwarded-host");
+  headers.delete("x-forwarded-proto");
   headers.set("x-better-auth-forwarded-host", requestUrl.host);
   headers.set(
     "x-better-auth-forwarded-proto",

@@ -1,0 +1,28 @@
+<div className="fd-step">
+
+### `oidcProvider` is no longer supported
+
+Better Auth 1.7 removed the `oidcProvider` plugin, which the Convex plugin used
+internally to serve its OpenID discovery document. The component now serves the
+document itself, and its schema no longer declares the three tables
+`oidcProvider` added: `oauthApplication`, `oauthAccessToken` and `oauthConsent`.
+
+The document now lists only the issuer, the JWKS URI and the token capabilities
+that Convex and other relying parties need. Before, it also listed `/oauth2/*`
+authorization, token, userinfo, registration and end-session endpoints, which
+the Convex plugin never served.
+
+Apps can no longer act as an OpenID provider by adding the `oidcProvider` plugin
+themselves. Better Auth 1.7 requires compound unique indexes for it, and the
+Convex adapter doesn't support them: schema generation and the adapter throw an
+error on any plugin that declares them.
+
+**Upgrading deletes nothing.** Convex keeps an undeclared table and its
+documents, and stops validating them. In most apps these tables are empty,
+because the component never wrote to them, and you can delete them from the
+component in the [Convex dashboard](https://dashboard.convex.dev). If your app
+was an OpenID provider, `oauthApplication` holds your registered clients,
+including client secrets and redirect URLs; export it before you delete
+anything.
+
+</div>

@@ -75,6 +75,27 @@ describe("convexBetterAuthNextJs handler", () => {
     expect(headers.get("x-better-auth-forwarded-proto")).toBe("https");
   });
 
+  it("drops x-forwarded-* headers the request arrived with", async () => {
+    const { handler, fetchSpy } = setup();
+    const request = new Request(
+      "https://app.example.com/api/auth/sign-in/email",
+      {
+        method: "POST",
+        body: "{}",
+        headers: {
+          "x-forwarded-host": "evil.example",
+          "x-forwarded-proto": "http",
+        },
+      }
+    );
+    await handler.POST(request);
+    const headers = headersOf(fetchSpy);
+    expect(headers.get("x-forwarded-host")).toBeNull();
+    expect(headers.get("x-forwarded-proto")).toBeNull();
+    expect(headers.get("x-better-auth-forwarded-host")).toBe("app.example.com");
+    expect(headers.get("x-better-auth-forwarded-proto")).toBe("https");
+  });
+
   it("buffers POST body and forwards as ArrayBuffer", async () => {
     const { handler, fetchSpy } = setup();
     const body = JSON.stringify({ email: "test@example.com" });

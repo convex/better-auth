@@ -17,6 +17,7 @@ import { seo } from '@/utils/seo'
 import { ConvexQueryClient } from '@convex-dev/react-query'
 import { createServerFn } from '@tanstack/react-start'
 import { getToken } from '@/lib/auth-server'
+import { Toaster } from 'sonner'
 
 const getAuth = createServerFn({ method: 'GET' }).handler(async () => {
   return await getToken()
@@ -87,6 +88,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body className="bg-neutral-950 text-neutral-50">
         {children}
+        <Toaster />
         <ReactQueryDevtools />
         <TanStackRouterDevtools position="bottom-right" />
         <Scripts />

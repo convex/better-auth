@@ -4,7 +4,6 @@ import {
   twoFactorClient,
   magicLinkClient,
   emailOTPClient,
-  genericOAuthClient,
   anonymousClient,
   inferAdditionalFields,
 } from "better-auth/client/plugins";
@@ -24,7 +23,6 @@ export const authClient = createAuthClient({
     magicLinkClient(),
     emailOTPClient(),
     twoFactorClient(),
-    genericOAuthClient(),
     convexClient(),
   ],
 });

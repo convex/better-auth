@@ -167,25 +167,40 @@ describe("createClient route registration", () => {
         forwardedHost: "app.example.com",
         forwardedProto: "https",
       });
+      expect(request.headers.get("x-better-auth-forwarded-host")).toBeNull();
+      expect(request.headers.get("x-better-auth-forwarded-proto")).toBeNull();
     });
 
-    it("requires the forwarded scheme to match the trusted origin", async () => {
+    it("rejects an http scheme for a host trusted only over https", async () => {
       vi.stubEnv("CONVEX_SITE_URL", SITE);
-      const httpsOnly = await callHandler(["https://app.example.com"], {
+      const request = await callHandler(["https://app.example.com"], {
+        "x-forwarded-host": "deployment.convex.site",
+        "x-forwarded-proto": "https",
         "x-better-auth-forwarded-host": "app.example.com",
         "x-better-auth-forwarded-proto": "http",
       });
-      expect(originOf(httpsOnly).url).toBe(`${SITE}/api/auth/test?x=1`);
-      const httpListed = await callHandler(
+      expect(originOf(request)).toEqual({
+        url: `${SITE}/api/auth/test?x=1`,
+        host: "deployment.convex.site",
+        forwardedHost: "deployment.convex.site",
+        forwardedProto: "https",
+      });
+    });
+
+    it("accepts an http scheme when that origin is trusted", async () => {
+      const request = await callHandler(
         ["https://app.example.com", "http://app.example.com"],
         {
           "x-better-auth-forwarded-host": "app.example.com",
           "x-better-auth-forwarded-proto": "http",
         }
       );
-      expect(originOf(httpListed).url).toBe(
-        "http://app.example.com/api/auth/test?x=1"
-      );
+      expect(originOf(request)).toEqual({
+        url: "http://app.example.com/api/auth/test?x=1",
+        host: "app.example.com",
+        forwardedHost: "app.example.com",
+        forwardedProto: "http",
+      });
     });
 
     it("ignores an original host that only matches a wildcard", async () => {
@@ -206,6 +221,22 @@ describe("createClient route registration", () => {
         "x-better-auth-forwarded-host": "app.example.com",
       });
       expect(originOf(request).host).toBe("deployment.convex.site");
+    });
+
+    it("ignores an original host that smuggles a path or userinfo", async () => {
+      vi.stubEnv("CONVEX_SITE_URL", SITE);
+      for (const host of [
+        "app.example.com/evil",
+        "app.example.com?x",
+        "user@app.example.com",
+        "app.example.com#f",
+      ]) {
+        const request = await callHandler(["https://app.example.com"], {
+          "x-better-auth-forwarded-host": host,
+          "x-better-auth-forwarded-proto": "https",
+        });
+        expect(originOf(request).host, host).toBe("deployment.convex.site");
+      }
     });
 
     it("replaces client-sent host and x-forwarded-* with the site URL", async () => {
@@ -240,6 +271,20 @@ describe("createClient route registration", () => {
         url: "https://auth.example.com/api/auth/test?x=1",
         host: "auth.example.com",
         forwardedHost: "auth.example.com",
+        forwardedProto: "https",
+      });
+    });
+
+    it("keeps the request's own origin without a site URL", async () => {
+      vi.stubEnv("CONVEX_SITE_URL", "");
+      const request = await callHandler([], {
+        "x-forwarded-host": "other.example",
+        "x-forwarded-proto": "http",
+      });
+      expect(originOf(request)).toEqual({
+        url: `${SITE}/api/auth/test?x=1`,
+        host: "deployment.convex.site",
+        forwardedHost: "deployment.convex.site",
         forwardedProto: "https",
       });
     });
@@ -314,4 +359,105 @@ describe("createClient route registration", () => {
     );
     expect(createAuth).toHaveBeenCalledTimes(1);
   });
+});
+
+describe("createClient verbose logging", () => {
+  it("doesn't turn on the adapter's debugLogs", () => {
+    // Adapter debug logs print full database rows, including session tokens
+    // and password hashes, so verbose mode must not enable them.
+    const client = createClient(component, { verbose: true });
+    const adapter = client.adapter({} as any)({} as any) as {
+      options?: { adapterConfig?: { debugLogs?: unknown } };
+    };
+    expect(adapter.options?.adapterConfig?.debugLogs).toBe(false);
+  });
+
+  it("passes debugLogs to the adapter", () => {
+    const client = createClient(component, { debugLogs: { findOne: true } });
+    const adapter = client.adapter({} as any)({} as any) as {
+      options?: { adapterConfig?: { debugLogs?: unknown } };
+    };
+    expect(adapter.options?.adapterConfig?.debugLogs).toEqual({
+      findOne: true,
+    });
+  });
+
+  const requestSecrets = {
+    cookie: "better-auth.session_token=cookie-secret",
+    authorization: "Bearer authorization-secret",
+    "better-auth-cookie": "better-auth.session_token=cross-domain-secret",
+    "x-api-key": "api-key-secret",
+    referer: "https://app.example.com/callback?code=referer-secret",
+  };
+  const makeAuth = () => ({
+    handler: async () => {
+      const headers = new Headers({
+        "set-better-auth-cookie": "set-better-auth-cookie-secret",
+        "set-auth-token": "set-auth-token-secret",
+        "set-auth-jwt": "set-auth-jwt-secret",
+        location: "https://app.example.com/dashboard?ott=location-secret",
+      });
+      headers.append("set-cookie", "a=set-cookie-secret; Path=/");
+      return new Response("ok", { headers });
+    },
+    options: { trustedOrigins: ["https://app.example.com"] },
+    $context: Promise.resolve({
+      options: { trustedOrigins: ["https://app.example.com"] },
+    }),
+  });
+
+  it.each([
+    ["registerRoutes", false],
+    ["registerRoutes", true],
+    ["registerRoutesLazy", false],
+    ["registerRoutesLazy", true],
+  ] as const)(
+    "%s (cors: %s) redacts credentials in logged headers",
+    async (register, cors) => {
+      const client = createClient(component, { verbose: true });
+      const http = httpRouter();
+      client[register](http, makeAuth, { cors });
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        const response = await getRouteHandler(
+          http,
+          "/api/auth/get-session",
+          "GET"
+        )!._handler(
+          {},
+          new Request("https://example.convex.site/api/auth/get-session", {
+            headers: { ...requestSecrets, origin: "https://app.example.com" },
+          })
+        );
+        expect(response.status).toBe(200);
+        // Headers serialize to {} in JSON, flatten them like a console would
+        const logged = JSON.stringify(log.mock.calls, (_key, value) =>
+          value instanceof Headers ? Array.from(value.entries()) : value
+        );
+        expect(logged).toContain("request headers");
+        expect(logged).toContain("response headers");
+        expect(logged).toContain("[redacted]");
+        // Redirect targets stay visible, without their query string
+        expect(logged).toContain(
+          "https://app.example.com/dashboard?[redacted]"
+        );
+        for (const secret of [
+          "cookie-secret",
+          "authorization-secret",
+          "cross-domain-secret",
+          "api-key-secret",
+          "referer-secret",
+          "set-cookie-secret",
+          "set-better-auth-cookie-secret",
+          "set-auth-token-secret",
+          "set-auth-jwt-secret",
+          "location-secret",
+        ]) {
+          expect(logged).not.toContain(secret);
+        }
+      } finally {
+        log.mockRestore();
+      }
+    }
+  );
 });

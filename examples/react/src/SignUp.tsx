@@ -121,7 +121,7 @@ export default function SignUp() {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="password">Confirm Password</Label>
+            <Label htmlFor="password_confirmation">Confirm Password</Label>
             <Input
               id="password_confirmation"
               type="password"

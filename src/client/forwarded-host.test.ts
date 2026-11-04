@@ -101,8 +101,8 @@ afterEach(() => {
 });
 
 describe("forwarded origin with dynamic baseURL (proxy headers trusted)", async () => {
-  // Better Auth 1.6 trusts x-forwarded-* by default in dynamic mode.
-  const { requestReset } = await setup();
+  // Apps that opt in to x-forwarded-* with advanced.trustedProxyHeaders.
+  const { requestReset } = await setup({ trustedProxyHeaders: true });
 
   it("builds links from the fallback with no original host", async () => {
     expect((await requestReset({})).host).toBe(APP_HOST);
@@ -142,7 +142,7 @@ describe("forwarded origin with dynamic baseURL (proxy headers trusted)", async 
 
 describe("forwarded origin with dynamic baseURL (proxy headers not trusted)", async () => {
   // Better Auth 1.7's default: the host header and request URL are used.
-  const { requestReset } = await setup({ trustedProxyHeaders: false });
+  const { requestReset } = await setup();
 
   it("uses an exactly listed original origin", async () => {
     const url = await requestReset({

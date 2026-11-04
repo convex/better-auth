@@ -1,0 +1,25 @@
+<div className="fd-step">
+
+### Drop `optionsOnly` parameter from `createAuth`
+
+Remove the `optionsOnly` parameter from `createAuth`, along with the `logger`
+option that reads it.
+
+```ts title="convex/auth.ts"
+// [!code --:4]
+export const createAuth = (
+  ctx: GenericCtx<DataModel>,
+  { optionsOnly } = { optionsOnly: false },
+) => {
+export const createAuth = (ctx: GenericCtx<DataModel>) => { // [!code ++]
+  return betterAuth({
+    // [!code --:3]
+    logger: {
+      disabled: optionsOnly,
+    },
+    // ... auth config
+  });
+}
+```
+
+</div>
