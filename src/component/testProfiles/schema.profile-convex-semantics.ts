@@ -44,11 +44,23 @@ const clientResourceTable = defineTable({
   label: optional(v.string()),
 }).index("clientId_resourceId", ["clientId", "resourceId"]);
 
+// Mirrors `@better-auth/oauth-provider` 1.7's `oauthClientResource` table,
+// unique on `[clientId, resourceId]` through a compound table-level index.
+const oauthClientResourceTable = defineTable({
+  clientId: v.string(),
+  resourceId: v.string(),
+  metadata: optional(v.string()),
+  createdAt: optional(v.number()),
+})
+  .index("resourceId", ["resourceId"])
+  .index("clientId_resourceId", ["clientId", "resourceId"]);
+
 const schema = defineSchema({
   ...baseTables,
   deviceCode: deviceCodeTable,
   nullable: nullableTable,
   clientResource: clientResourceTable,
+  oauthClientResource: oauthClientResourceTable,
 });
 
 export default schema;

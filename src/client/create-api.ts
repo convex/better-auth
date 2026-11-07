@@ -278,7 +278,21 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
               `Attempted to set unique fields in multiple documents in ${args.input.model} with the same value. Fields: ${Object.keys(args.input.update ?? {}).join(", ")}`
             );
           }
-          await asyncMap(page, async (doc) => {
+          // One document at a time, so each document's unique checks see the
+          // documents updated before it: an update that writes part of a
+          // compound unique index can give two documents in the page the
+          // same combination. Each document is read again because an
+          // onUpdate trigger for an earlier one may have changed it.
+          for (const pageDoc of page) {
+            const doc = await ctx.db.get(
+              args.input.model,
+              pageDoc._id as GenericId<TableNames>
+            );
+            if (!doc) {
+              throw new Error(
+                `Failed to update ${args.input.model} (deleted by onUpdate trigger?)`
+              );
+            }
             await checkUniqueFields(
               ctx,
               schema,
@@ -306,7 +320,7 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
                 }
               );
             }
-          });
+          }
         }
         return {
           ...result,

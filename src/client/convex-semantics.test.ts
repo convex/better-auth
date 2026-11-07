@@ -40,6 +40,7 @@ import { describe, expect, it, vi } from "vitest";
 import { convexTest } from "convex-test";
 import { ConvexHttpClient } from "convex/browser";
 import { anyApi } from "convex/server";
+import type { GenericDataModel } from "convex/server";
 import { getAuthTables } from "better-auth/db";
 import type { Where } from "better-auth/types";
 import { api, internal } from "../component/_generated/api.js";
@@ -1011,6 +1012,188 @@ describe("table-level unique indexes", () => {
         })
       ).resolves.toBeNull();
       expect(await adapter.count({ model: "deviceCode" })).toBe(1);
+    });
+  });
+
+  describe("compound unique index (oauth-provider's oauthClientResource)", () => {
+    const link = (clientId: string, resourceId: string) => ({
+      model: "oauthClientResource",
+      data: { clientId, resourceId, createdAt: new Date() },
+    });
+    const DUPLICATE =
+      "oauthClientResource clientId, resourceId already exists (unique constraint)";
+    // `@better-auth/oauth-provider` turns a failed link into an
+    // `alreadyLinked` response when the error message matches this.
+    const UNIQUE_VIOLATION = /unique|duplicate|UNIQUE/i;
+    const pairs = async (h: Harness) =>
+      (await h.collect("oauthClientResource"))
+        .map((doc) => `${doc.clientId} ${doc.resourceId}`)
+        .sort();
+
+    it("schema generator emits an index over the pair", async () => {
+      const { code } = await createSchema({
+        tables: getAuthTables(convexSemanticsProfileOptions),
+      });
+      const header = "oauthClientResource: defineTable(";
+      const start = code.indexOf(header);
+      const nextTable = code.indexOf("defineTable(", start + header.length);
+      expect(code.slice(start, nextTable)).toContain(
+        '.index("clientId_resourceId", ["clientId","resourceId"])'
+      );
+    });
+
+    it("rejects a second row with the same pair and accepts other pairs", async () => {
+      const h = await setup();
+      await expect(
+        h.adapter.create(link("client-1", "resource-1"))
+      ).resolves.toMatchObject({
+        clientId: "client-1",
+        resourceId: "resource-1",
+      });
+      const duplicate = h.adapter.create(link("client-1", "resource-1"));
+      await expect(duplicate).rejects.toThrow(DUPLICATE);
+      await expect(duplicate).rejects.toThrow(UNIQUE_VIOLATION);
+      // Sharing one field of the pair is not a collision.
+      await h.adapter.create(link("client-1", "resource-2"));
+      await h.adapter.create(link("client-2", "resource-1"));
+      expect(await pairs(h)).toEqual([
+        "client-1 resource-1",
+        "client-1 resource-2",
+        "client-2 resource-1",
+      ]);
+    });
+
+    it("rejects an update onto another row's pair", async () => {
+      const h = await setup();
+      await h.adapter.create(link("client-1", "resource-1"));
+      const row = await h.adapter.create<Row>(link("client-1", "resource-2"));
+      const update = (update: Record<string, unknown>) =>
+        h.adapter.update<Row>({
+          model: "oauthClientResource",
+          where: [{ field: "id", value: row.id }],
+          update,
+        });
+      // The row's stored clientId completes the pair.
+      await expect(update({ resourceId: "resource-1" })).rejects.toThrow(
+        DUPLICATE
+      );
+      await expect(
+        update({ clientId: "client-1", resourceId: "resource-1" })
+      ).rejects.toThrow(DUPLICATE);
+      // Writing the row's own pair, or fields outside the index, is fine.
+      await expect(
+        update({ clientId: "client-1", resourceId: "resource-2" })
+      ).resolves.toMatchObject({ id: row.id });
+      await expect(
+        update({ metadata: { note: "kept" } })
+      ).resolves.toMatchObject({ id: row.id });
+      // The adapter declares `supportsJSON: false`, so Better Auth stores
+      // json fields as strings.
+      const stored = (await h.collect("oauthClientResource")).find(
+        (doc) => String(doc._id) === row.id
+      );
+      expect(stored?.metadata).toBe('{"note":"kept"}');
+      // Moving the row to a free pair works and frees its old pair.
+      await expect(update({ clientId: "client-2" })).resolves.toMatchObject({
+        clientId: "client-2",
+        resourceId: "resource-2",
+      });
+      await h.adapter.create(link("client-1", "resource-2"));
+      expect(await pairs(h)).toEqual([
+        "client-1 resource-1",
+        "client-1 resource-2",
+        "client-2 resource-2",
+      ]);
+    });
+
+    it("updateMany can't give two rows in one call the same pair", async () => {
+      const h = await setup();
+      await h.adapter.create(link("client-1", "resource-1"));
+      await h.adapter.create(link("client-1", "resource-2"));
+      await expect(
+        h.adapter.updateMany({
+          model: "oauthClientResource",
+          where: [{ field: "clientId", value: "client-1" }],
+          update: { resourceId: "resource-3" },
+        })
+      ).rejects.toThrow(DUPLICATE);
+      // The mutation failed as a whole.
+      expect(await pairs(h)).toEqual([
+        "client-1 resource-1",
+        "client-1 resource-2",
+      ]);
+      // Rows that keep distinct pairs update together.
+      await expect(
+        h.adapter.updateMany({
+          model: "oauthClientResource",
+          where: [{ field: "clientId", value: "client-1" }],
+          update: { clientId: "client-2" },
+        })
+      ).resolves.toBe(2);
+      expect(await pairs(h)).toEqual([
+        "client-2 resource-1",
+        "client-2 resource-2",
+      ]);
+    });
+
+    convexTestOnly(
+      "updateMany checks each row as an earlier row's trigger left it",
+      async () => {
+        // The trigger runs inside the adapter's mutation, as in
+        // "updateMany fires onUpdate exactly once per matching row". After
+        // the first row moves to resource-3, its trigger moves the second
+        // row to client-1, so the second row would become client-1
+        // resource-3 as well.
+        const h = convexTestHarness();
+        await h.adapter.create(link("client-1", "resource-1"));
+        await h.adapter.create(link("client-2", "resource-2"));
+        await expect(
+          h.t.run(async (ctx) => {
+            const adapter = convexAdapter<GenericDataModel, any, typeof schema>(
+              ctx as any,
+              profileApi,
+              {
+                authFunctions: {
+                  onUpdate:
+                    internal.testTriggerHandlers
+                      .oauthClientResourceOnUpdateMover,
+                },
+                triggers: { oauthClientResource: { onUpdate: async () => {} } },
+              }
+            )(convexSemanticsProfileOptions);
+            return adapter.updateMany({
+              model: "oauthClientResource",
+              where: [
+                {
+                  field: "resourceId",
+                  operator: "in",
+                  value: ["resource-1", "resource-2"],
+                },
+              ],
+              update: { resourceId: "resource-3" },
+            });
+          })
+        ).rejects.toThrow(DUPLICATE);
+        expect(await pairs(h)).toEqual([
+          "client-1 resource-1",
+          "client-2 resource-2",
+        ]);
+      }
+    );
+
+    it("finds a row by the pair", async () => {
+      const h = await setup();
+      const row = await h.adapter.create<Row>(link("client-1", "resource-1"));
+      await h.adapter.create(link("client-1", "resource-2"));
+      await expect(
+        h.adapter.findOne<Row>({
+          model: "oauthClientResource",
+          where: [
+            { field: "clientId", value: "client-1" },
+            { field: "resourceId", value: "resource-1" },
+          ],
+        })
+      ).resolves.toMatchObject({ id: row.id });
     });
   });
 });

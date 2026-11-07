@@ -5,21 +5,24 @@ import { convexTest } from "convex-test";
 import type { BetterAuthOptions } from "better-auth";
 import { getAuthTables } from "better-auth/db";
 import { deviceAuthorization } from "better-auth/plugins/device-authorization";
-import { anyApi } from "convex/server";
+import { anyApi, defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
 import schema from "../component/testProfiles/schema.profile-plugin-table.js";
 import { pluginTableProfileOptions } from "../component/testProfiles/auth-options.profile-plugin-table.js";
 import { renameFieldProfileOptions } from "../component/testProfiles/auth-options.profile-rename-joins.js";
 import { createClient } from "./index.js";
 import { createSchema } from "./create-schema.js";
 import { createApi } from "./create-api.js";
+import { checkUniqueFields } from "./adapter-utils.js";
 import type { DataModel } from "../component/_generated/dataModel.js";
 
 /**
  * Better Auth 1.7 plugins can declare uniqueness with table-level
  * `indexes: [{ fields, unique: true }]` rather than field-level `unique`.
  * The schema generator emits those indexes. The adapter enforces single-field
- * unique indexes by treating the field as field-level unique; compound unique
- * indexes are rejected.
+ * unique indexes by treating the field as field-level unique, and compound
+ * unique indexes by checking the combination of values (see the Convex
+ * semantics suite).
  */
 const setup = () => {
   const t = convexTest(schema, import.meta.glob("../component/**/*.*s"));
@@ -61,31 +64,104 @@ describe("table-level indexes", () => {
     expect(deviceCodeTable).toContain('.index("userCode", ["userCode"])');
   });
 
-  it("rejects compound unique indexes at schema generation and load", async () => {
+  it("accepts compound unique indexes at schema generation and load", async () => {
+    // `@better-auth/oauth-provider` 1.7's `oauthClientResource` table.
     const options = {
       ...pluginTableProfileOptions,
       plugins: [
         {
-          id: "compound-unique-test",
+          id: "oauth-client-resource-test",
           schema: {
-            pair: {
+            oauthClientResource: {
               fields: {
-                left: { type: "string", required: true },
-                right: { type: "string", required: true },
+                clientId: {
+                  type: "string",
+                  required: true,
+                  references: { model: "oauthClient", field: "clientId" },
+                  index: true,
+                },
+                resourceId: {
+                  type: "string",
+                  required: true,
+                  references: { model: "oauthResource", field: "identifier" },
+                  index: true,
+                },
+                metadata: { type: "json", required: false },
+                createdAt: { type: "date", required: false },
               },
-              indexes: [{ fields: ["left", "right"], unique: true }],
+              indexes: [{ fields: ["clientId", "resourceId"], unique: true }],
             },
           },
         },
       ],
     } as BetterAuthOptions;
-    const message =
-      "pair: compound unique index [left, right] is not supported by the Convex adapter";
-    await expect(
-      createSchema({ tables: getAuthTables(options) })
-    ).rejects.toThrow(message);
-    expect(() => createApi(schema, () => options)).toThrow(message);
+    const { code } = await createSchema({ tables: getAuthTables(options) });
+    expect(code).toContain(
+      '.index("clientId_resourceId", ["clientId","resourceId"])'
+    );
+    expect(() => createApi(schema, () => options)).not.toThrow();
   });
+});
+
+describe("compound unique index field order", () => {
+  // `clientId` sorts before `client_id` by code unit, which is how the schema
+  // generator orders index fields, and after it under localeCompare, which is
+  // how findIndex orders equality fields. The index is declared in
+  // localeCompare order, `client_id` first, so the generated index has its
+  // fields in a different order from the declaration.
+  const tables = getAuthTables({
+    ...pluginTableProfileOptions,
+    plugins: [
+      {
+        id: "field-order-test",
+        schema: {
+          pair: {
+            fields: {
+              clientId: { type: "string", required: true },
+              client_id: { type: "string", required: true },
+            },
+            indexes: [{ fields: ["client_id", "clientId"], unique: true }],
+          },
+        },
+      },
+    ],
+  } as BetterAuthOptions);
+  const fields = { clientId: v.string(), client_id: v.string() };
+  const schemas = {
+    "code-unit order (generated)": defineSchema({
+      pair: defineTable(fields).index("pair", ["clientId", "client_id"]),
+    }),
+    "localeCompare order": defineSchema({
+      pair: defineTable(fields).index("pair", ["client_id", "clientId"]),
+    }),
+  };
+
+  it("generates the index in code-unit order", async () => {
+    const { code } = await createSchema({ tables });
+    expect(code).toContain(
+      '.index("clientId_client_id", ["clientId","client_id"])'
+    );
+  });
+
+  for (const [order, pairSchema] of Object.entries(schemas)) {
+    it(`enforces the index with its fields in ${order}`, async () => {
+      const t = convexTest(
+        pairSchema,
+        import.meta.glob("../component/**/*.*s")
+      );
+      await t.run(async (ctx) => {
+        await ctx.db.insert("pair", { clientId: "a", client_id: "b" });
+        const check = (input: Record<string, string>) =>
+          checkUniqueFields(ctx as any, pairSchema, tables, "pair", input);
+        await expect(check({ clientId: "a", client_id: "b" })).rejects.toThrow(
+          "pair client_id, clientId already exists (unique constraint)"
+        );
+        await expect(
+          check({ clientId: "a", client_id: "c" })
+        ).resolves.toBeUndefined();
+      });
+    });
+  }
 });
 
 describe("field-level unique checks", () => {

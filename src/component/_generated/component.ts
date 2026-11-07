@@ -4272,6 +4272,38 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | Array<number>
                       | null;
                   }>;
+                }
+              | {
+                  model: "oauthClientResource";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field:
+                      | "clientId"
+                      | "resourceId"
+                      | "metadata"
+                      | "createdAt"
+                      | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
                 };
             onDeleteHandle?: string;
           },
@@ -4396,6 +4428,15 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     resourceId: string;
                   };
                   model: "clientResource";
+                }
+              | {
+                  data: {
+                    clientId: string;
+                    createdAt?: null | number;
+                    metadata?: null | string;
+                    resourceId: string;
+                  };
+                  model: "oauthClientResource";
                 };
             onCreateHandle?: string;
             select?: Array<string>;
@@ -4722,6 +4763,38 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  model: "oauthClientResource";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field:
+                      | "clientId"
+                      | "resourceId"
+                      | "metadata"
+                      | "createdAt"
+                      | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -5096,6 +5169,38 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | Array<number>
                       | null;
                   }>;
+                }
+              | {
+                  model: "oauthClientResource";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field:
+                      | "clientId"
+                      | "resourceId"
+                      | "metadata"
+                      | "createdAt"
+                      | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
                 };
             onDeleteHandle?: string;
           },
@@ -5118,7 +5223,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "rateLimit"
               | "deviceCode"
               | "nullable"
-              | "clientResource";
+              | "clientResource"
+              | "oauthClientResource";
             offset?: number;
             paginationOpts: {
               cursor: string | null;
@@ -5173,7 +5279,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "rateLimit"
               | "deviceCode"
               | "nullable"
-              | "clientResource";
+              | "clientResource"
+              | "oauthClientResource";
             select?: Array<string>;
             where?: Array<{
               connector?: "AND" | "OR";
@@ -5636,6 +5743,45 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | Array<number>
                       | null;
                   }>;
+                }
+              | {
+                  increment: Record<string, number>;
+                  model: "oauthClientResource";
+                  set?: {
+                    clientId?: string;
+                    createdAt?: null | number;
+                    metadata?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field:
+                      | "clientId"
+                      | "resourceId"
+                      | "metadata"
+                      | "createdAt"
+                      | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
                 };
             onUpdateHandle?: string;
           },
@@ -6048,6 +6194,44 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  model: "oauthClientResource";
+                  update: {
+                    clientId?: string;
+                    createdAt?: null | number;
+                    metadata?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field:
+                      | "clientId"
+                      | "resourceId"
+                      | "metadata"
+                      | "createdAt"
+                      | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -6489,6 +6673,44 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  model: "oauthClientResource";
+                  update: {
+                    clientId?: string;
+                    createdAt?: null | number;
+                    metadata?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field:
+                      | "clientId"
+                      | "resourceId"
+                      | "metadata"
+                      | "createdAt"
+                      | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
