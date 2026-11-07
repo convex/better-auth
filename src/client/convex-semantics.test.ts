@@ -1013,6 +1013,137 @@ describe("table-level unique indexes", () => {
       expect(await adapter.count({ model: "deviceCode" })).toBe(1);
     });
   });
+
+  describe("compound unique index (oauth-provider's oauthClientResource)", () => {
+    const link = (clientId: string, resourceId: string) => ({
+      model: "oauthClientResource",
+      data: { clientId, resourceId, createdAt: new Date() },
+    });
+    const DUPLICATE =
+      "oauthClientResource clientId, resourceId already exists (unique constraint)";
+    // `@better-auth/oauth-provider` turns a failed link into an
+    // `alreadyLinked` response when the error message matches this.
+    const UNIQUE_VIOLATION = /unique|duplicate|UNIQUE/i;
+    const pairs = async (h: Harness) =>
+      (await h.collect("oauthClientResource"))
+        .map((doc) => `${doc.clientId} ${doc.resourceId}`)
+        .sort();
+
+    it("schema generator emits an index over the pair", async () => {
+      const { code } = await createSchema({
+        tables: getAuthTables(convexSemanticsProfileOptions),
+      });
+      const header = "oauthClientResource: defineTable(";
+      const start = code.indexOf(header);
+      const nextTable = code.indexOf("defineTable(", start + header.length);
+      expect(code.slice(start, nextTable)).toContain(
+        '.index("clientId_resourceId", ["clientId","resourceId"])'
+      );
+    });
+
+    it("rejects a second row with the same pair and accepts other pairs", async () => {
+      const h = await setup();
+      await expect(
+        h.adapter.create(link("client-1", "resource-1"))
+      ).resolves.toMatchObject({
+        clientId: "client-1",
+        resourceId: "resource-1",
+      });
+      const duplicate = h.adapter.create(link("client-1", "resource-1"));
+      await expect(duplicate).rejects.toThrow(DUPLICATE);
+      await expect(duplicate).rejects.toThrow(UNIQUE_VIOLATION);
+      // Sharing one field of the pair is not a collision.
+      await h.adapter.create(link("client-1", "resource-2"));
+      await h.adapter.create(link("client-2", "resource-1"));
+      expect(await pairs(h)).toEqual([
+        "client-1 resource-1",
+        "client-1 resource-2",
+        "client-2 resource-1",
+      ]);
+    });
+
+    it("rejects an update onto another row's pair", async () => {
+      const h = await setup();
+      await h.adapter.create(link("client-1", "resource-1"));
+      const row = await h.adapter.create<Row>(link("client-1", "resource-2"));
+      const update = (update: Record<string, unknown>) =>
+        h.adapter.update<Row>({
+          model: "oauthClientResource",
+          where: [{ field: "id", value: row.id }],
+          update,
+        });
+      // The row's stored clientId completes the pair.
+      await expect(update({ resourceId: "resource-1" })).rejects.toThrow(
+        DUPLICATE
+      );
+      await expect(
+        update({ clientId: "client-1", resourceId: "resource-1" })
+      ).rejects.toThrow(DUPLICATE);
+      // Writing the row's own pair, or fields outside the index, is fine.
+      await expect(
+        update({ clientId: "client-1", resourceId: "resource-2" })
+      ).resolves.toMatchObject({ id: row.id });
+      await expect(
+        update({ metadata: { note: "kept" } })
+      ).resolves.toMatchObject({ id: row.id });
+      // Moving the row to a free pair works and frees its old pair.
+      await expect(update({ clientId: "client-2" })).resolves.toMatchObject({
+        clientId: "client-2",
+        resourceId: "resource-2",
+      });
+      await h.adapter.create(link("client-1", "resource-2"));
+      expect(await pairs(h)).toEqual([
+        "client-1 resource-1",
+        "client-1 resource-2",
+        "client-2 resource-2",
+      ]);
+    });
+
+    it("updateMany can't give two rows in one call the same pair", async () => {
+      const h = await setup();
+      await h.adapter.create(link("client-1", "resource-1"));
+      await h.adapter.create(link("client-1", "resource-2"));
+      await expect(
+        h.adapter.updateMany({
+          model: "oauthClientResource",
+          where: [{ field: "clientId", value: "client-1" }],
+          update: { resourceId: "resource-3" },
+        })
+      ).rejects.toThrow(DUPLICATE);
+      // The mutation failed as a whole.
+      expect(await pairs(h)).toEqual([
+        "client-1 resource-1",
+        "client-1 resource-2",
+      ]);
+      // Rows that keep distinct pairs update together.
+      await expect(
+        h.adapter.updateMany({
+          model: "oauthClientResource",
+          where: [{ field: "clientId", value: "client-1" }],
+          update: { clientId: "client-2" },
+        })
+      ).resolves.toBe(2);
+      expect(await pairs(h)).toEqual([
+        "client-2 resource-1",
+        "client-2 resource-2",
+      ]);
+    });
+
+    it("finds a row by the pair", async () => {
+      const h = await setup();
+      const row = await h.adapter.create<Row>(link("client-1", "resource-1"));
+      await h.adapter.create(link("client-1", "resource-2"));
+      await expect(
+        h.adapter.findOne<Row>({
+          model: "oauthClientResource",
+          where: [
+            { field: "clientId", value: "client-1" },
+            { field: "resourceId", value: "resource-1" },
+          ],
+        })
+      ).resolves.toMatchObject({ id: row.id });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

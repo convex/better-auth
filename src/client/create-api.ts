@@ -278,7 +278,11 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
               `Attempted to set unique fields in multiple documents in ${args.input.model} with the same value. Fields: ${Object.keys(args.input.update ?? {}).join(", ")}`
             );
           }
-          await asyncMap(page, async (doc) => {
+          // One document at a time, so each document's unique checks see the
+          // documents updated before it: an update that writes part of a
+          // compound unique index can give two documents in the page the
+          // same combination.
+          for (const doc of page) {
             await checkUniqueFields(
               ctx,
               schema,
@@ -306,7 +310,7 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
                 }
               );
             }
-          });
+          }
         }
         return {
           ...result,

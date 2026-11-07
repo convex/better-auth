@@ -18,8 +18,9 @@ import type { DataModel } from "../component/_generated/dataModel.js";
  * Better Auth 1.7 plugins can declare uniqueness with table-level
  * `indexes: [{ fields, unique: true }]` rather than field-level `unique`.
  * The schema generator emits those indexes. The adapter enforces single-field
- * unique indexes by treating the field as field-level unique; compound unique
- * indexes are rejected.
+ * unique indexes by treating the field as field-level unique, and compound
+ * unique indexes by checking the combination of values (see the Convex
+ * semantics suite).
  */
 const setup = () => {
   const t = convexTest(schema, import.meta.glob("../component/**/*.*s"));
@@ -61,30 +62,42 @@ describe("table-level indexes", () => {
     expect(deviceCodeTable).toContain('.index("userCode", ["userCode"])');
   });
 
-  it("rejects compound unique indexes at schema generation and load", async () => {
+  it("accepts compound unique indexes at schema generation and load", async () => {
+    // `@better-auth/oauth-provider` 1.7's `oauthClientResource` table.
     const options = {
       ...pluginTableProfileOptions,
       plugins: [
         {
-          id: "compound-unique-test",
+          id: "oauth-client-resource-test",
           schema: {
-            pair: {
+            oauthClientResource: {
               fields: {
-                left: { type: "string", required: true },
-                right: { type: "string", required: true },
+                clientId: {
+                  type: "string",
+                  required: true,
+                  references: { model: "oauthClient", field: "clientId" },
+                  index: true,
+                },
+                resourceId: {
+                  type: "string",
+                  required: true,
+                  references: { model: "oauthResource", field: "identifier" },
+                  index: true,
+                },
+                metadata: { type: "json", required: false },
+                createdAt: { type: "date", required: false },
               },
-              indexes: [{ fields: ["left", "right"], unique: true }],
+              indexes: [{ fields: ["clientId", "resourceId"], unique: true }],
             },
           },
         },
       ],
     } as BetterAuthOptions;
-    const message =
-      "pair: compound unique index [left, right] is not supported by the Convex adapter";
-    await expect(
-      createSchema({ tables: getAuthTables(options) })
-    ).rejects.toThrow(message);
-    expect(() => createApi(schema, () => options)).toThrow(message);
+    const { code } = await createSchema({ tables: getAuthTables(options) });
+    expect(code).toContain(
+      '.index("clientId_resourceId", ["clientId","resourceId"])'
+    );
+    expect(() => createApi(schema, () => options)).not.toThrow();
   });
 });
 
