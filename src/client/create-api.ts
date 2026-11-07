@@ -281,8 +281,18 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
           // One document at a time, so each document's unique checks see the
           // documents updated before it: an update that writes part of a
           // compound unique index can give two documents in the page the
-          // same combination.
-          for (const doc of page) {
+          // same combination. Each document is read again because an
+          // onUpdate trigger for an earlier one may have changed it.
+          for (const pageDoc of page) {
+            const doc = await ctx.db.get(
+              args.input.model,
+              pageDoc._id as GenericId<TableNames>
+            );
+            if (!doc) {
+              throw new Error(
+                `Failed to update ${args.input.model} (deleted by onUpdate trigger?)`
+              );
+            }
             await checkUniqueFields(
               ctx,
               schema,

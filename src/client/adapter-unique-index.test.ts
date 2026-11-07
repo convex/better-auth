@@ -5,13 +5,15 @@ import { convexTest } from "convex-test";
 import type { BetterAuthOptions } from "better-auth";
 import { getAuthTables } from "better-auth/db";
 import { deviceAuthorization } from "better-auth/plugins/device-authorization";
-import { anyApi } from "convex/server";
+import { anyApi, defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
 import schema from "../component/testProfiles/schema.profile-plugin-table.js";
 import { pluginTableProfileOptions } from "../component/testProfiles/auth-options.profile-plugin-table.js";
 import { renameFieldProfileOptions } from "../component/testProfiles/auth-options.profile-rename-joins.js";
 import { createClient } from "./index.js";
 import { createSchema } from "./create-schema.js";
 import { createApi } from "./create-api.js";
+import { checkUniqueFields } from "./adapter-utils.js";
 import type { DataModel } from "../component/_generated/dataModel.js";
 
 /**
@@ -99,6 +101,66 @@ describe("table-level indexes", () => {
     );
     expect(() => createApi(schema, () => options)).not.toThrow();
   });
+});
+
+describe("compound unique index field order", () => {
+  // `clientId` sorts before `client_id` by code unit, which is how the schema
+  // generator orders index fields, and after it under localeCompare, which is
+  // how findIndex orders equality fields. The index is declared in neither
+  // of those orders' favor: `client_id` first.
+  const tables = getAuthTables({
+    ...pluginTableProfileOptions,
+    plugins: [
+      {
+        id: "field-order-test",
+        schema: {
+          pair: {
+            fields: {
+              clientId: { type: "string", required: true },
+              client_id: { type: "string", required: true },
+            },
+            indexes: [{ fields: ["client_id", "clientId"], unique: true }],
+          },
+        },
+      },
+    ],
+  } as BetterAuthOptions);
+  const fields = { clientId: v.string(), client_id: v.string() };
+  const schemas = {
+    "code-unit order (generated)": defineSchema({
+      pair: defineTable(fields).index("pair", ["clientId", "client_id"]),
+    }),
+    "localeCompare order": defineSchema({
+      pair: defineTable(fields).index("pair", ["client_id", "clientId"]),
+    }),
+  };
+
+  it("generates the index in code-unit order", async () => {
+    const { code } = await createSchema({ tables });
+    expect(code).toContain(
+      '.index("clientId_client_id", ["clientId","client_id"])'
+    );
+  });
+
+  for (const [order, pairSchema] of Object.entries(schemas)) {
+    it(`enforces the index with its fields in ${order}`, async () => {
+      const t = convexTest(
+        pairSchema,
+        import.meta.glob("../component/**/*.*s")
+      );
+      await t.run(async (ctx) => {
+        await ctx.db.insert("pair", { clientId: "a", client_id: "b" });
+        const check = (input: Record<string, string>) =>
+          checkUniqueFields(ctx as any, pairSchema, tables, "pair", input);
+        await expect(check({ clientId: "a", client_id: "b" })).rejects.toThrow(
+          "pair client_id, clientId already exists (unique constraint)"
+        );
+        await expect(
+          check({ clientId: "a", client_id: "c" })
+        ).resolves.toBeUndefined();
+      });
+    });
+  }
 });
 
 describe("field-level unique checks", () => {

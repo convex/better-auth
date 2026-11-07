@@ -354,6 +354,23 @@ export const checkUniqueFields = async <
   }
 };
 
+// The index whose leading fields are `fields`, in any order. findIndex
+// expects equality fields in localeCompare order, but the schema generator
+// sorts index fields by code unit (`clientId` before `client_id`, the other
+// way round under localeCompare), and an index may be written by hand.
+const findIndexStartingWith = (
+  schema: SchemaDefinition<any, any>,
+  table: string,
+  fields: string[]
+): { indexDescriptor: string; fields: string[] } | undefined => {
+  const indexes: { indexDescriptor: string; fields: string[] }[] =
+    schema.tables[table]?.[" indexes"]() ?? [];
+  return indexes.find((index) => {
+    const leading = index.fields.slice(0, fields.length);
+    return fields.every((field) => leading.includes(field));
+  });
+};
+
 // A compound unique index constrains the combination of its fields' values.
 // On update, the document's stored values stand in for the fields the update
 // leaves out. Better Auth only accepts required fields in a unique index, but
@@ -380,24 +397,16 @@ const checkCompoundUniqueIndexes = async (
     if (fields.some((field) => values[field] == null)) {
       continue;
     }
-    const found = findIndex(schema, {
-      model: table,
-      where: fields.map((field) => ({
-        field,
-        operator: "eq" as const,
-        value: values[field],
-      })),
-    });
-    if (!found?.index) {
+    const index = findIndexStartingWith(schema, table, fields);
+    if (!index) {
       throw new Error(`No index found for ${table}.${fields.join(", ")}`);
     }
-    const { index, values: indexValues } = found;
     // take(2) for the same reasons as the single-field check above.
     const existingDocs = await ctx.db
       .query(table as any)
       .withIndex(index.indexDescriptor, (q: any) => {
-        for (const [idx, value] of indexValues.eq.entries()) {
-          q = q.eq(index.fields[idx], value);
+        for (const field of index.fields.slice(0, fields.length)) {
+          q = q.eq(field, values[field]);
         }
         return q;
       })

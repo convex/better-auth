@@ -40,6 +40,7 @@ import { describe, expect, it, vi } from "vitest";
 import { convexTest } from "convex-test";
 import { ConvexHttpClient } from "convex/browser";
 import { anyApi } from "convex/server";
+import type { GenericDataModel } from "convex/server";
 import { getAuthTables } from "better-auth/db";
 import type { Where } from "better-auth/types";
 import { api, internal } from "../component/_generated/api.js";
@@ -1086,6 +1087,12 @@ describe("table-level unique indexes", () => {
       await expect(
         update({ metadata: { note: "kept" } })
       ).resolves.toMatchObject({ id: row.id });
+      // The adapter declares `supportsJSON: false`, so Better Auth stores
+      // json fields as strings.
+      const stored = (await h.collect("oauthClientResource")).find(
+        (doc) => String(doc._id) === row.id
+      );
+      expect(stored?.metadata).toBe('{"note":"kept"}');
       // Moving the row to a free pair works and frees its old pair.
       await expect(update({ clientId: "client-2" })).resolves.toMatchObject({
         clientId: "client-2",
@@ -1128,6 +1135,51 @@ describe("table-level unique indexes", () => {
         "client-2 resource-2",
       ]);
     });
+
+    convexTestOnly(
+      "updateMany checks each row as an earlier row's trigger left it",
+      async () => {
+        // The trigger runs inside the adapter's mutation, as in
+        // "updateMany fires onUpdate exactly once per matching row". After
+        // the first row moves to resource-3, its trigger moves the second
+        // row to client-1, so the second row would become client-1
+        // resource-3 as well.
+        const h = convexTestHarness();
+        await h.adapter.create(link("client-1", "resource-1"));
+        await h.adapter.create(link("client-2", "resource-2"));
+        await expect(
+          h.t.run(async (ctx) => {
+            const adapter = convexAdapter<GenericDataModel, any, typeof schema>(
+              ctx as any,
+              profileApi,
+              {
+                authFunctions: {
+                  onUpdate:
+                    internal.testTriggerHandlers
+                      .oauthClientResourceOnUpdateMover,
+                },
+                triggers: { oauthClientResource: { onUpdate: async () => {} } },
+              }
+            )(convexSemanticsProfileOptions);
+            return adapter.updateMany({
+              model: "oauthClientResource",
+              where: [
+                {
+                  field: "resourceId",
+                  operator: "in",
+                  value: ["resource-1", "resource-2"],
+                },
+              ],
+              update: { resourceId: "resource-3" },
+            });
+          })
+        ).rejects.toThrow(DUPLICATE);
+        expect(await pairs(h)).toEqual([
+          "client-1 resource-1",
+          "client-2 resource-2",
+        ]);
+      }
+    );
 
     it("finds a row by the pair", async () => {
       const h = await setup();
