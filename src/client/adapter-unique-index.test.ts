@@ -106,8 +106,9 @@ describe("table-level indexes", () => {
 describe("compound unique index field order", () => {
   // `clientId` sorts before `client_id` by code unit, which is how the schema
   // generator orders index fields, and after it under localeCompare, which is
-  // how findIndex orders equality fields. The index is declared in neither
-  // of those orders' favor: `client_id` first.
+  // how findIndex orders equality fields. The index is declared in
+  // localeCompare order, `client_id` first, so the generated index has its
+  // fields in a different order from the declaration.
   const tables = getAuthTables({
     ...pluginTableProfileOptions,
     plugins: [
