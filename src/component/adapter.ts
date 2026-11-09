@@ -1,5 +1,5 @@
-import { createApi } from "../client/index.js";
-import { options } from "../auth-options.js";
+import { createTableApi } from "../client/create-api.js";
+import { adapterTables } from "../adapter-tables.js";
 import schema from "./schema.js";
 
 export const {
@@ -12,4 +12,4 @@ export const {
   deleteMany,
   consumeOne,
   incrementOne,
-} = createApi(schema, () => options);
+} = createTableApi(schema, adapterTables);
