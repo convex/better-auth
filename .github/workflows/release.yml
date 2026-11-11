@@ -13,8 +13,7 @@ on:
         type: string
 
 concurrency:
-  group: ${{ github.workflow }}
-  queue: max
+  group: ${{ github.workflow }}-${{ github.sha }}
   cancel-in-progress: false
 
 permissions: {}
