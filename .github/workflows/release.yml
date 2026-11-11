@@ -1,0 +1,232 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      commit:
+        description:
+          "Optional 40-character version-bump commit SHA reachable from the
+          selected ref"
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  NODE_VERSION: "24.22.1"
+
+jobs:
+  plan:
+    if: github.repository_owner == 'convex'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.select.outputs.sha }}
+      name: ${{ steps.select.outputs.name }}
+      version: ${{ steps.select.outputs.version }}
+      channel: ${{ steps.select.outputs.channel }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - id: select
+        name: Select the latest version-bump commit
+        env:
+          RELEASE_COMMIT: ${{ inputs.commit }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            source="${RELEASE_COMMIT:-$GITHUB_SHA}"
+            [[ "$source" =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected a 40-character commit SHA' >&2; exit 1; }
+            git merge-base --is-ancestor "$source" "$GITHUB_SHA"
+          else
+            before=$(jq -r .before "$GITHUB_EVENT_PATH")
+            source=''
+            candidates=$(git rev-list --first-parent "$before..$GITHUB_SHA" -- package.json)
+            while read -r candidate && [[ -n "$candidate" ]]; do
+              current=$(git show "$candidate:package.json" | jq -r .version)
+              previous=$(git show "$candidate^1:package.json" | jq -r .version)
+              if [[ "$current" != "$previous" ]]; then source="$candidate"; break; fi
+            done <<< "$candidates"
+            if [[ -z "$source" ]]; then echo 'No version bump'; exit 0; fi
+          fi
+          name=$(git show "$source:package.json" | jq -r .name)
+          VERSION=$(git show "$source:package.json" | jq -r .version)
+          PREVIOUS_VERSION=$(git show "$source^1:package.json" | jq -r .version)
+          export VERSION PREVIOUS_VERSION
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { appendFileSync } from 'node:fs';
+          import { createRequire } from 'node:module';
+          // Use the standard SemVer library bundled with the pinned npm.
+          const npmRoot = execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim();
+          const semver = createRequire(`${npmRoot}/npm/package.json`)('semver');
+          const { VERSION: version, PREVIOUS_VERSION: previous, GITHUB_REF: ref } = process.env;
+          if (semver.valid(version) !== version || !semver.gt(version, previous)) throw new Error('Selected commit must increase the package version');
+          const pre = semver.prerelease(version);
+          const channel = pre ? String(pre[0]) : 'latest';
+          if (pre && (!/^[a-z][a-z0-9-]*$/.test(channel) || channel === 'latest' || semver.validRange(channel))) throw new Error('Invalid prerelease channel');
+          if (!pre && ref !== 'refs/heads/main') throw new Error('Stable releases require main');
+          appendFileSync(process.env.GITHUB_OUTPUT, `channel=${channel}\n`);
+          NODE
+          tag="v$VERSION"
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            [[ "$(git rev-parse "$tag^{commit}")" == "$source" ]] || { echo "$tag points elsewhere" >&2; exit 1; }
+            if [[ "$GITHUB_EVENT_NAME" != workflow_dispatch ]]; then
+              echo "$tag was already staged; skipping automatic release"
+              exit 0
+            fi
+          fi
+          {
+            echo "sha=$source"
+            echo "name=$name"
+            echo "version=$VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.sha != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      sha256: ${{ steps.digest.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - run: npm ci --min-release-age=0
+      - name: Validate release notes
+        run: |
+          # Compare against this checkout while reading all notes, including prerelease state.
+          git update-ref refs/heads/main HEAD
+          npx changeset status --output "$RUNNER_TEMP/changesets.json"
+          jq -e '.changesets | length == 0' "$RUNNER_TEMP/changesets.json"
+          version=$(jq -r .version package.json)
+          awk -v version="$version" '/^## / { active=($0 == "## " version); next } active && !/^#/ && /[[:alnum:]]/ { found=1 } END { exit !found }' CHANGELOG.md
+      - run: npm run build
+      - name: Install example and E2E dependencies
+        run: |
+          for dir in examples/next examples/react examples/tanstack e2e; do
+            npm ci --prefix "$dir" --min-release-age=0
+          done
+      - run: npm run check
+      - name: Regenerate and verify committed code
+        env:
+          CONVEX_DISABLE_TELEMETRY: "1"
+        run: |
+          (cd examples/react && npx convex init)
+          npm run build:codegen
+          git diff --exit-code -- src/component/_generated examples/react/convex/_generated examples/react/convex/betterAuth/_generated
+          test -z "$(git ls-files --others --exclude-standard src/component/_generated examples/react/convex/_generated examples/react/convex/betterAuth/_generated)"
+      - name: Install Playwright browsers
+        run: cd e2e && npx playwright install --with-deps chromium
+      - name: Run Convex semantics suite against a local backend
+        run: cd e2e && node backendHarness.js 'bash live-semantics/run.sh'
+      - name: Run E2E tests
+        run: npm run test:e2e
+      - name: Pack the tested package
+        run: |
+          mkdir -p "$RUNNER_TEMP/npm-release"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/npm-release"
+      - id: digest
+        run:
+          echo "sha256=$(sha256sum "$RUNNER_TEMP"/npm-release/*.tgz | cut -d ' '
+          -f 1)" >> "$GITHUB_OUTPUT"
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: npm-release-${{ needs.plan.outputs.sha }}
+          path: ${{ runner.temp }}/npm-release/*.tgz
+          if-no-files-found: error
+
+  stage:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: ${{ runner.temp }}/npm-release
+          merge-multiple: true
+      - name: Stage the tested artifact
+        env:
+          SOURCE_SHA: ${{ needs.plan.outputs.sha }}
+          PACKAGE_NAME: ${{ needs.plan.outputs.name }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
+          EXPECTED_SHA256: ${{ needs.build.outputs.sha256 }}
+        run: |
+          set -o pipefail
+          set -- "$RUNNER_TEMP"/npm-release/*.tgz
+          test "$#" -eq 1
+          TARBALL="$1"
+          echo "$EXPECTED_SHA256  $TARBALL" | sha256sum -c -
+          {
+            echo "$PACKAGE_NAME@$VERSION — source $SOURCE_SHA — npm channel $CHANNEL"
+            echo "Review on npm's Staged Packages page, then approve with 2FA or npm stage approve <stage-id>."
+          } >> "$GITHUB_STEP_SUMMARY"
+          # npm reads GITHUB_SHA for provenance; checkout alone does not change it.
+          GITHUB_SHA="$SOURCE_SHA" npm stage publish "$TARBALL" \
+            --ignore-scripts --provenance --access public --tag "$CHANNEL" \
+            2>&1 | tee "$RUNNER_TEMP/npm-stage.log"
+      - name: Preserve staging output and stage ID
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/npm-stage.log"; then
+            cat "$RUNNER_TEMP/npm-stage.log" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  tag:
+    needs: [plan, stage]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Tag the staged source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.plan.outputs.sha }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            test "$(git rev-parse "$tag^{commit}")" = "$SOURCE_SHA"
+          else
+            git tag "$tag" "$SOURCE_SHA"
+            gh auth setup-git
+            git push origin "refs/tags/$tag"
+          fi
