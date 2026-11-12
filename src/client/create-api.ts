@@ -20,6 +20,7 @@ import {
   withTableLevelUniqueFields,
 } from "./adapter-utils.js";
 import { getAuthTables } from "better-auth/db";
+import type { BetterAuthDBSchema } from "better-auth/db";
 import type { TableNames } from "../component/_generated/dataModel.js";
 import type { BetterAuthOptions } from "better-auth/minimal";
 
@@ -64,10 +65,15 @@ const whereValidator = (
 export const createApi = <Schema extends SchemaDefinition<any, any>>(
   schema: Schema,
   createAuthOptions: (ctx: any) => BetterAuthOptions
+) => createTableApi(schema, getAuthTables(createAuthOptions({} as any)));
+
+// Takes the table description directly, so a module that already knows its
+// tables doesn't have to load auth options and plugins to build the adapter.
+export const createTableApi = <Schema extends SchemaDefinition<any, any>>(
+  schema: Schema,
+  tables: BetterAuthDBSchema
 ) => {
-  const betterAuthSchema = withTableLevelUniqueFields(
-    getAuthTables(createAuthOptions({} as any))
-  );
+  const betterAuthSchema = withTableLevelUniqueFields(tables);
   return {
     create: mutationGeneric({
       args: {
