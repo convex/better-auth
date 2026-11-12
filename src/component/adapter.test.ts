@@ -25,19 +25,34 @@ it("loads without the sample auth options or the client index", async () => {
   expect(adapter.findOne).toBeDefined();
 });
 
+// What the adapter reads from each table: its model name, the stored name of
+// each unique field, every renamed field with its target, and the stored names
+// of the account lookup pair that checkAccountKeyAvailable queries.
+const storedName = (fields: Record<string, any>, name: string) =>
+  fields[name]?.fieldName ?? name;
+
 const describeTables = (tables: Record<string, any>) =>
   Object.fromEntries(
     Object.entries(tables).map(([key, table]) => [
       key,
       {
         modelName: table.modelName,
-        unique: Object.entries<any>(table.fields)
-          .filter(([, field]) => field.unique)
-          .map(([name]) => name)
-          .sort(),
-        renamed: Object.entries<any>(table.fields)
-          .filter(([name, field]) => (field.fieldName ?? name) !== name)
-          .map(([name]) => name),
+        unique: Object.fromEntries(
+          Object.entries<any>(table.fields)
+            .filter(([, field]) => field.unique)
+            .map(([name]) => [name, storedName(table.fields, name)])
+        ),
+        renamed: Object.fromEntries(
+          Object.entries<any>(table.fields)
+            .filter(([name]) => storedName(table.fields, name) !== name)
+            .map(([name, field]) => [name, field.fieldName])
+        ),
+        ...(key === "account" && {
+          accountKey: {
+            accountId: storedName(table.fields, "accountId"),
+            providerId: storedName(table.fields, "providerId"),
+          },
+        }),
       },
     ])
   );
@@ -47,7 +62,12 @@ const describeTables = (tables: Record<string, any>) =>
 it("describes the same tables as the default auth options", async () => {
   const { adapterTables } = await import("../adapter-tables.js");
 
-  expect(describeTables(adapterTables)).toEqual(
-    describeTables(withTableLevelUniqueFields(getAuthTables(options)))
+  const tables = withTableLevelUniqueFields(getAuthTables(options));
+
+  // The account key falls back to the default names, so make sure the real
+  // schema still has both fields rather than comparing two fallbacks.
+  expect(Object.keys(tables.account.fields)).toEqual(
+    expect.arrayContaining(["accountId", "providerId"])
   );
+  expect(describeTables(adapterTables)).toEqual(describeTables(tables));
 });
