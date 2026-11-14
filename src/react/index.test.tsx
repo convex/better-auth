@@ -15,6 +15,10 @@ type SessionState = {
   isPending: boolean;
 };
 type AuthState = ReturnType<typeof useConvexAuth>;
+type TokenResponse = {
+  data: { token?: string } | null;
+  error?: { status: number };
+};
 
 // Convex JWTs minted by the convex plugin always carry `sessionId`.
 const convexJwt = (sessionId: string) => {
@@ -71,7 +75,9 @@ const setup = async ({
   const { ConvexBetterAuthProvider } = await import("./index.js");
   const state = { session };
   const remaining = [...tokens];
-  const token = vi.fn(async () => ({ data: { token: remaining.shift() } }));
+  const token = vi.fn(
+    async (): Promise<TokenResponse> => ({ data: { token: remaining.shift() } })
+  );
   const authClient = {
     convex: { token },
     useSession: () => state.session,
@@ -247,5 +253,37 @@ describe("ConvexBetterAuthProvider", () => {
 
     expect([a, b]).toEqual(["token-2", "token-2"]);
     expect(token).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the token when a refresh fails, until the session is gone", async () => {
+    const { fetchers, token } = await setup({
+      session: signedIn("session-a"),
+      tokens: ["token-1"],
+    });
+    const fetchToken = fetchers[0]!;
+
+    token.mockResolvedValueOnce({ data: null, error: { status: 502 } });
+    await expect(fetchToken({ forceRefreshToken: true })).resolves.toBe(
+      "token-1"
+    );
+    token.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await expect(fetchToken({ forceRefreshToken: true })).resolves.toBe(
+      "token-1"
+    );
+
+    token.mockResolvedValueOnce({ data: null, error: { status: 401 } });
+    await expect(fetchToken({ forceRefreshToken: true })).resolves.toBeNull();
+  });
+
+  it("does not keep an SSR token from a different session when a fetch fails", async () => {
+    const { events, setSession, token } = await setup({
+      initialToken: convexJwt("session-a"),
+      session: pending,
+    });
+    token.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    await setSession(signedIn("session-b"));
+
+    expect(events.slice(-2)).toEqual(["setAuth", "authenticate:null"]);
   });
 });
