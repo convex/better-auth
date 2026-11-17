@@ -6983,6 +6983,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   where?: Array<{
                     connector?: "AND" | "OR";
@@ -7324,6 +7351,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     slot: string;
                   };
                   model: "compoundIndex";
+                }
+              | {
+                  data: {
+                    clientId: string;
+                    label?: null | string;
+                    resourceId: string;
+                  };
+                  model: "compoundUnique";
                 }
               | {
                   data: {
@@ -7828,6 +7863,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -8497,6 +8559,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   where?: Array<{
                     connector?: "AND" | "OR";
@@ -8690,6 +8779,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "one_to_one_table"
               | "testModel"
               | "compoundIndex"
+              | "compoundUnique"
               | "organization"
               | "member"
               | "team"
@@ -8753,6 +8843,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "one_to_one_table"
               | "testModel"
               | "compoundIndex"
+              | "compoundUnique"
               | "organization"
               | "member"
               | "team"
@@ -9370,6 +9461,39 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  increment: Record<string, number>;
+                  model: "compoundUnique";
+                  set?: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -10207,6 +10331,38 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  update: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   update: {
                     createdAt?: number;
@@ -11001,6 +11157,38 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  model: "compoundUnique";
+                  update: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -11703,6 +11891,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   where?: Array<{
                     connector?: "AND" | "OR";
@@ -12044,6 +12259,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     slot: string;
                   };
                   model: "compoundIndex";
+                }
+              | {
+                  data: {
+                    clientId: string;
+                    label?: null | string;
+                    resourceId: string;
+                  };
+                  model: "compoundUnique";
                 }
               | {
                   data: {
@@ -12548,6 +12771,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -13217,6 +13467,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   where?: Array<{
                     connector?: "AND" | "OR";
@@ -13410,6 +13687,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "one_to_one_table"
               | "testModel"
               | "compoundIndex"
+              | "compoundUnique"
               | "organization"
               | "member"
               | "team"
@@ -13473,6 +13751,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "one_to_one_table"
               | "testModel"
               | "compoundIndex"
+              | "compoundUnique"
               | "organization"
               | "member"
               | "team"
@@ -14090,6 +14369,39 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  increment: Record<string, number>;
+                  model: "compoundUnique";
+                  set?: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -14927,6 +15239,38 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  update: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   update: {
                     createdAt?: number;
@@ -15721,6 +16065,38 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  model: "compoundUnique";
+                  update: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -16423,6 +16799,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   where?: Array<{
                     connector?: "AND" | "OR";
@@ -16764,6 +17167,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     slot: string;
                   };
                   model: "compoundIndex";
+                }
+              | {
+                  data: {
+                    clientId: string;
+                    label?: null | string;
+                    resourceId: string;
+                  };
+                  model: "compoundUnique";
                 }
               | {
                   data: {
@@ -17268,6 +17679,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -17937,6 +18375,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   where?: Array<{
                     connector?: "AND" | "OR";
@@ -18130,6 +18595,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "one_to_one_table"
               | "testModel"
               | "compoundIndex"
+              | "compoundUnique"
               | "organization"
               | "member"
               | "team"
@@ -18193,6 +18659,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "one_to_one_table"
               | "testModel"
               | "compoundIndex"
+              | "compoundUnique"
               | "organization"
               | "member"
               | "team"
@@ -18810,6 +19277,39 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  increment: Record<string, number>;
+                  model: "compoundUnique";
+                  set?: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -19647,6 +20147,38 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  update: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   update: {
                     createdAt?: number;
@@ -20441,6 +20973,38 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  model: "compoundUnique";
+                  update: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -21143,6 +21707,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   where?: Array<{
                     connector?: "AND" | "OR";
@@ -21484,6 +22075,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     slot: string;
                   };
                   model: "compoundIndex";
+                }
+              | {
+                  data: {
+                    clientId: string;
+                    label?: null | string;
+                    resourceId: string;
+                  };
+                  model: "compoundUnique";
                 }
               | {
                   data: {
@@ -21988,6 +22587,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -22657,6 +23283,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   where?: Array<{
                     connector?: "AND" | "OR";
@@ -22850,6 +23503,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "one_to_one_table"
               | "testModel"
               | "compoundIndex"
+              | "compoundUnique"
               | "organization"
               | "member"
               | "team"
@@ -22913,6 +23567,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "one_to_one_table"
               | "testModel"
               | "compoundIndex"
+              | "compoundUnique"
               | "organization"
               | "member"
               | "team"
@@ -23530,6 +24185,39 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  increment: Record<string, number>;
+                  model: "compoundUnique";
+                  set?: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -24367,6 +25055,38 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  update: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   update: {
                     createdAt?: number;
@@ -25161,6 +25881,38 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  model: "compoundUnique";
+                  update: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -25863,6 +26615,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   where?: Array<{
                     connector?: "AND" | "OR";
@@ -26204,6 +26983,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     slot: string;
                   };
                   model: "compoundIndex";
+                }
+              | {
+                  data: {
+                    clientId: string;
+                    label?: null | string;
+                    resourceId: string;
+                  };
+                  model: "compoundUnique";
                 }
               | {
                   data: {
@@ -26708,6 +27495,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -27377,6 +28191,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   where?: Array<{
                     connector?: "AND" | "OR";
@@ -27570,6 +28411,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "one_to_one_table"
               | "testModel"
               | "compoundIndex"
+              | "compoundUnique"
               | "organization"
               | "member"
               | "team"
@@ -27633,6 +28475,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | "one_to_one_table"
               | "testModel"
               | "compoundIndex"
+              | "compoundUnique"
               | "organization"
               | "member"
               | "team"
@@ -28250,6 +29093,39 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  increment: Record<string, number>;
+                  model: "compoundUnique";
+                  set?: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
@@ -29087,6 +29963,38 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   }>;
                 }
               | {
+                  model: "compoundUnique";
+                  update: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
                   model: "organization";
                   update: {
                     createdAt?: number;
@@ -29881,6 +30789,38 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   where?: Array<{
                     connector?: "AND" | "OR";
                     field: "groupId" | "slot" | "label" | "_id";
+                    mode?: "sensitive" | "insensitive";
+                    operator?:
+                      | "lt"
+                      | "lte"
+                      | "gt"
+                      | "gte"
+                      | "eq"
+                      | "in"
+                      | "not_in"
+                      | "ne"
+                      | "contains"
+                      | "starts_with"
+                      | "ends_with";
+                    value:
+                      | string
+                      | number
+                      | boolean
+                      | Array<string>
+                      | Array<number>
+                      | null;
+                  }>;
+                }
+              | {
+                  model: "compoundUnique";
+                  update: {
+                    clientId?: string;
+                    label?: null | string;
+                    resourceId?: string;
+                  };
+                  where?: Array<{
+                    connector?: "AND" | "OR";
+                    field: "clientId" | "resourceId" | "label" | "_id";
                     mode?: "sensitive" | "insensitive";
                     operator?:
                       | "lt"
