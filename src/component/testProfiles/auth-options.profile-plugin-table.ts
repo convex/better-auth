@@ -77,6 +77,32 @@ export const pluginTableProfileOptions = {
       },
     },
     {
+      // Compound unique index, shaped like @better-auth/oauth-provider 1.7's
+      // `oauthClientResource` (references dropped).
+      id: "compound-unique-test",
+      schema: {
+        compoundUnique: {
+          fields: {
+            clientId: {
+              type: "string",
+              required: true,
+              index: true,
+            },
+            resourceId: {
+              type: "string",
+              required: true,
+              index: true,
+            },
+            label: {
+              type: "string",
+              required: false,
+            },
+          },
+          indexes: [{ fields: ["clientId", "resourceId"], unique: true }],
+        },
+      },
+    },
+    {
       id: "plugin-table-test-model",
       schema: {
         testModel: {

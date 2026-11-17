@@ -66,6 +66,14 @@ const compoundIndexTable = defineTable({
   label: v.optional(v.union(v.null(), v.string())),
 }).index("groupId_slot", ["groupId", "slot"]);
 
+const compoundUniqueTable = defineTable({
+  clientId: v.string(),
+  resourceId: v.string(),
+  label: v.optional(v.union(v.null(), v.string())),
+})
+  .index("resourceId", ["resourceId"])
+  .index("clientId_resourceId", ["clientId", "resourceId"]);
+
 const organizationTable = defineTable({
   name: v.string(),
   slug: v.string(),
@@ -130,6 +138,7 @@ const schema = defineSchema({
   one_to_one_table: oneToOneTableRenamed,
   testModel: testModelTable,
   compoundIndex: compoundIndexTable,
+  compoundUnique: compoundUniqueTable,
   organization: organizationTable,
   member: memberTable,
   team: teamTable,

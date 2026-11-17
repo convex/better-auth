@@ -58,18 +58,86 @@ export const adapterArgsValidator = v.object({
   offset: v.optional(v.number()),
 });
 
-// Compound unique indexes can't be enforced by this adapter. Fail when the
-// schema is generated or loaded rather than accept writes that violate them.
-export const assertNoCompoundUniqueIndexes = (
-  betterAuthSchema: BetterAuthDBSchema
+// Stored field names of each compound unique index declared on a model
+// (e.g. oauth-provider's `oauthClientResource` [clientId, resourceId]).
+const compoundUniqueIndexes = (
+  betterAuthSchema: BetterAuthDBSchema,
+  model: string
+): string[][] => {
+  const table = Object.values(betterAuthSchema).find(
+    (value) => value.modelName === model
+  );
+  return (table?.indexes ?? [])
+    .filter((index) => index.unique && index.fields.length > 1)
+    .map((index) =>
+      index.fields.map((field) => table?.fields[field]?.fieldName ?? field)
+    );
+};
+
+// Compound unique indexes are enforced on create only. The only official
+// Better Auth 1.7 table that declares one (oauth-provider's
+// `oauthClientResource`) is created and deleted but never updated, so an
+// update that changes a field of a compound unique index is refused rather
+// than checked.
+export const assertCompoundUniqueFieldsUnchanged = (
+  betterAuthSchema: BetterAuthDBSchema,
+  table: string,
+  update: Record<string, any>,
+  doc: Record<string, any>
 ) => {
-  for (const [key, table] of Object.entries(betterAuthSchema)) {
-    for (const index of table.indexes ?? []) {
-      if (index.unique && index.fields.length > 1) {
+  for (const fields of compoundUniqueIndexes(betterAuthSchema, table)) {
+    for (const field of fields) {
+      if (field in update && update[field] !== doc[field]) {
         throw new Error(
-          `${table.modelName ?? key}: compound unique index [${index.fields.join(", ")}] is not supported by the Convex adapter`
+          `Cannot update ${table}.${field}: it is part of the compound unique index [${fields.join(", ")}], which the Convex adapter only enforces on create. Delete the row and create a new one instead.`
         );
       }
+    }
+  }
+};
+
+// Reject a create that duplicates the values of a compound unique index. A
+// Convex mutation is a transaction, so the check and the insert can't
+// interleave with a concurrent create of the same values. The message
+// contains "unique constraint" because plugins detect unique violations by
+// message (oauth-provider turns one into an `alreadyLinked` response).
+export const checkCompoundUniqueOnCreate = async (
+  ctx: GenericQueryCtx<GenericDataModel>,
+  schema: SchemaDefinition<any, any>,
+  betterAuthSchema: BetterAuthDBSchema,
+  table: string,
+  input: Record<string, any>
+) => {
+  for (const fields of compoundUniqueIndexes(betterAuthSchema, table)) {
+    // Null and unset values never collide (SQL unique index semantics).
+    if (fields.some((field) => input[field] == null)) {
+      continue;
+    }
+    const found = findIndex(schema, {
+      model: table,
+      where: fields.map((field) => ({
+        field,
+        operator: "eq" as const,
+        value: input[field],
+      })),
+    });
+    if (!found?.index) {
+      throw new Error(`No index found for ${table}.${fields.join(", ")}`);
+    }
+    const { index, values } = found;
+    const existingDoc = await ctx.db
+      .query(table as any)
+      .withIndex(index.indexDescriptor, (q: any) => {
+        for (const [idx, value] of values.eq.entries()) {
+          q = q.eq(index.fields[idx], value);
+        }
+        return q;
+      })
+      .first();
+    if (existingDoc) {
+      throw new Error(
+        `${table} ${fields.join(", ")} already exists (unique constraint)`
+      );
     }
   }
 };
@@ -78,11 +146,11 @@ export const assertNoCompoundUniqueIndexes = (
 // (`indexes: [{ fields: ["deviceCode"], unique: true }]`, e.g.
 // device-authorization) instead of field-level `unique: true`. Mark the field
 // of each single-field unique index as unique so the field-level checks below
-// enforce it. Compound unique indexes throw (assertNoCompoundUniqueIndexes).
+// enforce it. Compound unique indexes are enforced separately
+// (checkCompoundUniqueOnCreate).
 export const withTableLevelUniqueFields = (
   betterAuthSchema: BetterAuthDBSchema
 ): BetterAuthDBSchema => {
-  assertNoCompoundUniqueIndexes(betterAuthSchema);
   return Object.fromEntries(
     Object.entries(betterAuthSchema).map(([key, table]) => {
       const uniqueFields = (table.indexes ?? [])
@@ -331,7 +399,7 @@ export const checkUniqueFields = async <
       .withIndex(index.indexDescriptor, (q) => q.eq(field, value))
       .take(2);
     if (existingDocs.some((existingDoc) => existingDoc._id !== doc?._id)) {
-      throw new Error(`${table} ${field} already exists`);
+      throw new Error(`${table} ${field} already exists (unique constraint)`);
     }
   }
 };

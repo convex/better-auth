@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- fix: support the OAuth Provider and MCP plugins (1.7.20 or later) again (#470,
+  #475). Compound unique indexes are no longer rejected: the adapter enforces
+  them on create, and refuses an update that changes one of their fields. A
+  unique violation's message now says "unique constraint", which plugins look
+  for
 - fix: verification consume on Better Auth 1.7.22+ (password reset, email OTP,
   magic link, phone number and two-factor OTP): allow `ne` on `_id`, and filter
   a `createdAt` bound on an indexed query instead of using it as an index range
