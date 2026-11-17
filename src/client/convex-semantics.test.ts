@@ -1789,6 +1789,62 @@ describe("lookups by id", () => {
   });
 });
 
+describe("an id ne and a createdAt bound on an indexed query", () => {
+  // Better Auth 1.7.22+ consumes a verification by deleting the identifier's
+  // older rows with `identifier eq`, `id ne latest`, `createdAt lte latest`.
+  // Rows are inserted out of createdAt order, so the bound must follow the
+  // stored createdAt rather than _creationTime.
+  const seed = async (h: Harness) => {
+    const at = 1_700_000_000_000;
+    const row = (identifier: string, createdAt: number) => ({
+      identifier,
+      value: "v",
+      expiresAt: at + 60_000,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    const [latest, older, newer, olderStill, other, tied] = await h.insertMany(
+      "verification",
+      [
+        row("otp:a", at + 2),
+        row("otp:a", at + 1),
+        row("otp:a", at + 3),
+        row("otp:a", at),
+        row("otp:b", at),
+        // At the bound itself: lte must include it.
+        row("otp:a", at + 2),
+      ]
+    );
+    const where: Where[] = [
+      { field: "identifier", value: "otp:a" },
+      { field: "id", operator: "ne", value: latest! },
+      { field: "createdAt", operator: "lte", value: at + 2 },
+    ];
+    return { latest, older, newer, olderStill, other, tied, where };
+  };
+
+  it("findMany returns the older rows only", async () => {
+    const h = await setup();
+    const { older, olderStill, tied, where } = await seed(h);
+    const found = await h.adapter.findMany<Row>({
+      model: "verification",
+      where,
+    });
+    expect(sortedIds(found)).toEqual([older!, olderStill!, tied!].sort());
+  });
+
+  it("deleteMany removes the older rows and keeps the rest", async () => {
+    const h = await setup();
+    const { latest, newer, other, where } = await seed(h);
+    expect(await h.adapter.deleteMany({ model: "verification", where })).toBe(
+      3
+    );
+    expect(docIds(await h.collect("verification"))).toEqual(
+      [latest!, newer!, other!].sort()
+    );
+  });
+});
+
 describe("findOne with OR clauses", () => {
   const seed = (h: Harness) =>
     h.insertMany("nullable", [{ plain: "a" }, { plain: "b" }]);

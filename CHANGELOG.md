@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- fix: verification consume on Better Auth 1.7.22+ (password reset, email OTP,
+  magic link, phone number and two-factor OTP): allow `ne` on `_id`, and filter
+  a `createdAt` bound on an indexed query instead of using it as an index range
+  (#479)
+
 ## 0.13.0
 
 - breaking: support Better Auth 1.7 (minimum 1.7.16); 1.6 is no longer supported
