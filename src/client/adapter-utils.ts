@@ -569,13 +569,17 @@ const generateQuery = (
     findIndex(schema, args) ?? {};
   const usableIndex =
     index?.indexDescriptor === "by_creation_time" ? undefined : index;
+  // Indexes end in _creationTime, not the stored createdAt, so a createdAt
+  // bound can't be an index range; it is applied as a filter below.
+  const rangeInIndex = boundField !== undefined && boundField !== "createdAt";
   const query = stream(ctx.db as any, schema).query(args.model as any);
   const hasValues =
     (values?.eq?.length ?? 0) > 0 ||
-    values?.lt !== undefined ||
-    values?.lte !== undefined ||
-    values?.gt !== undefined ||
-    values?.gte !== undefined;
+    (rangeInIndex &&
+      (values?.lt !== undefined ||
+        values?.lte !== undefined ||
+        values?.gt !== undefined ||
+        values?.gte !== undefined));
   const indexedQuery = usableIndex
     ? query.withIndex(
         usableIndex.indexDescriptor,
@@ -583,6 +587,9 @@ const generateQuery = (
           ? (q: any) => {
               for (const [idx, value] of (values?.eq ?? []).entries()) {
                 q = q.eq(usableIndex.fields[idx], value);
+              }
+              if (!rangeInIndex) {
+                return q;
               }
               if (values?.lt !== undefined) {
                 q = q.lt(boundField, values.lt);
@@ -630,7 +637,10 @@ const generateQuery = (
         (w.operator &&
           ["contains", "starts_with", "ends_with", "ne", "not_in"].includes(
             w.operator
-          ))
+          )) ||
+        (!rangeInIndex &&
+          w.field === boundField &&
+          ["lt", "lte", "gt", "gte"].includes(w.operator ?? ""))
     );
   });
   return filteredQuery;
@@ -737,11 +747,11 @@ export const paginate = async <
       (w) =>
         w.field === "_id" &&
         w.operator &&
-        !["eq", "in", "not_in"].includes(w.operator)
+        !["eq", "ne", "in", "not_in"].includes(w.operator)
     )
   ) {
     throw new Error(
-      `_id can only be used with eq, in, or not_in operator: ${JSON.stringify(args.where)}`
+      `_id can only be used with eq, ne, in, or not_in operator: ${JSON.stringify(args.where)}`
     );
   }
   if (args.where?.some((w) => w.mode === "insensitive")) {
