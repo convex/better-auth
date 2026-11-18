@@ -20,38 +20,87 @@ npm run check
 npm run test:e2e
 ```
 
-CI runs the Playwright and local Convex semantics suites after the fast checks. When component APIs change,
-regenerate and commit the generated files with `npm run build:codegen`.
+CI runs the Playwright and local Convex semantics suites after the fast checks.
+When component APIs change, regenerate and commit the generated files with
+`npm run build:codegen`.
 
 ## Releases
 
-Include a Changeset for user-visible package changes:
+Include a changeset with changes that need a release:
 
 ```sh
 npx changeset
 ```
 
-Review the generated version PR before merging it. Approve its GitHub Actions
-runs if GitHub requests approval, and wait for `Test and lint` to pass. Require
-that check on `main` before merging this CI publishing setup.
-The version PR updates the package version and changelog; merging it stages the
-package from that exact commit on `main`. A maintainer then reviews the staged
-package on npm and approves with 2FA. The source tag is created only after
-staging succeeds. If multiple stable versions are staged, approve them in
-version order; reject an older stage once a newer version has been approved so
-that the `latest` npm tag does not move backward.
+Choose the version bump, describe the user-visible change, and commit the
+generated file with your implementation. Docs-only and development-tooling
+changes do not need a changeset.
 
-Configure npm trusted publishing for this package's `release.yml` workflow
-before the first CI release. Use the npm package's Settings → Trusted Publisher
-page, or run:
+Review and merge the release PR when ready. Click **Approve workflows to run**
+on the PR if its checks are waiting for approval. To refresh it manually, run
+the [Update release PR workflow](./.github/workflows/version.yml) on main.
+
+When the release PR merges, CI tags the commit that set the new version as
+`v<version>` and starts the [Release workflow](./.github/workflows/release.yml)
+on that tag. To release a different commit, tag it yourself:
 
 ```sh
-npm trust github @convex-dev/better-auth --repo convex/better-auth --file release.yml --allow-stage-publish
+gh api repos/convex/better-auth/git/refs -f ref=refs/tags/v1.2.3 -f sha=<commit>
 ```
 
-To prepare a version PR without the bot, run `npx changeset version`, review
-the version, changelog and consumed Changesets, then commit and open a PR.
-If staging failed, dispatch **Release** with the version-bump commit SHA after
-checking that the version is not staged on npm. If staging succeeded but tagging
-failed, verify the staged package and rerun the failed `tag` job in the original
-workflow run. A second staging attempt cannot reuse the reserved version.
+Or, from a local clone: `git tag v1.2.3 <commit> && git push origin v1.2.3`.
+
+The tag must match `package.json`'s version. Stable releases must be on `main`;
+the commit may be older than the current tip. GitHub runs the release workflow
+from the tagged commit, so the commit must include it. The workflow builds and
+tests that commit, then stages the tested package on npm.
+
+Review the package on npm's **Staged Packages** page and approve with 2FA, or
+run:
+
+```sh
+npm stage approve <stage-id>
+```
+
+Use the stage ID from the workflow log. Approve versions in order to avoid
+moving `latest` backward.
+
+### Local preparation and prereleases
+
+To prepare a release locally instead of using the bot:
+
+```sh
+npm ci
+npm run build
+npm run check
+npx changeset version
+```
+
+Review and commit the version, changelog, and consumed changesets, then merge
+through a checked PR.
+
+For a branch prerelease, prepare a prerelease version with Changesets on that
+branch and tag its commit, such as `v1.2.3-alpha.0`. The first prerelease
+identifier selects the npm channel, such as `alpha`.
+
+### Recovery
+
+The tag records intent to release; npm is the source of truth for what was
+staged. If the workflow fails, check npm's staged packages first:
+
+- Tagged, but Release didn't start: start it on the tag with
+  `gh workflow run release.yml -R convex/better-auth --ref v1.2.3`.
+- Not staged: rerun the failed jobs
+  (`gh run rerun <run-id> -R convex/better-auth --failed`), for example after
+  pushing `main` if the tag went first. A rerun uses the run's original commit
+  and works for 30 days.
+
+  To release a different commit, fix the source and move the tag:
+
+  ```sh
+  gh api -X PATCH repos/convex/better-auth/git/refs/tags/v1.2.3 -f sha=<commit> -F force=true
+  ```
+
+- Staged, but rejected in review: `npm stage reject <stage-id>` frees the
+  version, so you can move the tag to a corrected commit. A published version
+  cannot be reused; prepare a new version instead.

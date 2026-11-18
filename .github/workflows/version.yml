@@ -1,7 +1,7 @@
 name: Update release PR
 
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}-${{ github.sha }}
   cancel-in-progress: false
 
 on:
@@ -31,29 +31,20 @@ jobs:
           node-version: "24.22.1"
           package-manager-cache: false
       - run: npm ci --ignore-scripts
-      - name: Check whether a version PR is needed
-        id: mode
-        uses: changesets/action/select-mode@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
-      - name: Check main is still at this run's commit
-        if: steps.mode.outputs.mode == 'version'
-        id: freshness
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          if [[ "$main_sha" == "$GITHUB_SHA" ]]; then
-            echo "current=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "current=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping release PR update: main has moved beyond this run's commit."
-          fi
-      - name: Create or update the release PR
-        if:
-          steps.mode.outputs.mode == 'version' &&
-          steps.freshness.outputs.current == 'true'
-        uses: changesets/action/version@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+      - uses: convex/npm-release-actions/version-pr@3a142e21f421319890981579b8952267bc11fc53 # v0.3.0
+
+  tag:
+    name: Tag a new version
+    if: github.repository_owner == 'convex' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # create the version tag
+      actions: write # start Release on the new tag
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          github-token: ${{ github.token }}
-          pr-title: "Prepare next release"
-          commit-message: "Version packages"
-          pr-base-branch: main
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: convex/npm-release-actions/tag-version@3a142e21f421319890981579b8952267bc11fc53 # v0.3.0

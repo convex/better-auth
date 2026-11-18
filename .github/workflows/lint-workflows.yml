@@ -29,6 +29,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: raven-actions/actionlint@205b530c5d9fa8f44ae9ed59f341a0db994aa6f8 # v2.1.2
+        with:
+          version: 1.7.12 # actionlint binary; the action otherwise downloads latest
 
   zizmor:
     name: zizmor
