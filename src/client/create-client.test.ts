@@ -215,6 +215,17 @@ describe("createClient route registration", () => {
       expect(originOf(request).url).toBe(`${SITE}/api/auth/test?x=1`);
     });
 
+    it("ignores an original host that is only the prefix of a `?` pattern", async () => {
+      // Better Auth reads `?` as a one-character wildcard. A URL parser reads
+      // `?` as the start of the query, so the entry parses to https://app.
+      vi.stubEnv("CONVEX_SITE_URL", SITE);
+      const request = await callHandler(["https://app?.example.com"], {
+        "x-better-auth-forwarded-host": "app",
+        "x-better-auth-forwarded-proto": "https",
+      });
+      expect(originOf(request).url).toBe(`${SITE}/api/auth/test?x=1`);
+    });
+
     it("ignores a trusted original host without a valid protocol", async () => {
       vi.stubEnv("CONVEX_SITE_URL", SITE);
       const request = await callHandler(["https://app.example.com"], {
