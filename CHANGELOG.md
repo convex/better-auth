@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- chore: update to Better Auth 1.7.25, which is now the minimum
 - fix: support the OAuth Provider and MCP plugins (1.7.20 or later) again (#470,
   #475). Compound unique indexes are no longer rejected: the adapter enforces
   them on create, and refuses an update that changes one of their fields. A

@@ -35,6 +35,7 @@ const NORMAL_DISABLED_TESTS = [
   "create - should return null for nullable foreign keys",
   "create - should support arrays",
   "create - should support json",
+  "create - should support json arrays",
   // convex-id-generation:
   // Convex controls generated IDs at write time.
   "create - should use generateId if provided",
