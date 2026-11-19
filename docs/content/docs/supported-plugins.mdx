@@ -22,24 +22,6 @@ Install](/local-install).
 - [Two Factor](https://www.better-auth.com/docs/plugins/2fa)
 - [Username](https://www.better-auth.com/docs/plugins/username)
 
-### OAuth Provider and MCP
-
-[OAuth Provider](https://www.better-auth.com/docs/plugins/oauth-provider) and
-[MCP](https://www.better-auth.com/docs/plugins/mcp), which is built on it, add
-tables, so they need [Local Install](/local-install). Use version 1.7.25 or
-later of `@better-auth/oauth-provider` and `@better-auth/mcp`. The Convex
-adapter refuses to start with an earlier version of
-`@better-auth/oauth-provider`.
-
-OAuth Provider declares a compound unique index on `oauthClientResource`
-(`clientId`, `resourceId`). The Convex adapter enforces it when a row is
-created, and refuses an update that changes either field. The plugin never
-updates those fields; it deletes a link and creates a new one.
-
-The Convex adapter refuses `private_key_jwt` client assertions, so
-`private_key_jwt` client authentication and key rotation aren't supported.
-Client ID Metadata Documents (`@better-auth/cimd`) aren't supported either.
-
 ### Incompatible plugins
 
 Official Better Auth plugins that are incompatible with Convex + Better Auth
@@ -49,3 +31,8 @@ Official Better Auth plugins that are incompatible with Convex + Better Auth
 - [SCIM](https://www.better-auth.com/docs/plugins/scim) - requires a database
   adapter that supports Better Auth transactions, which are incompatible with
   how Convex transactions work.
+- [OAuth Provider](https://www.better-auth.com/docs/plugins/oauth-provider) -
+  relies on database features that Convex doesn't have. It works in part, but
+  support is minimal and not guaranteed.
+- [MCP](https://www.better-auth.com/docs/plugins/mcp) - built on the OAuth
+  Provider plugin.

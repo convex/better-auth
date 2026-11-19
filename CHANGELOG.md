@@ -6,11 +6,8 @@
 - fix: refuse to start with `advanced.database.generateId: "uuid"`, which turns
   off Better Auth's single-use checks. The option has no effect on ids, because
   Convex assigns them
-- fix: support the OAuth Provider and MCP plugins (1.7.25 or later) again (#470,
-  #475). Compound unique indexes are no longer rejected: the adapter enforces
-  them on create, and refuses an update that changes one of their fields. A
-  unique violation's message now says "unique constraint", which plugins look
-  for
+- fix: stop rejecting versions 1.7.25 and later of the OAuth Provider and MCP
+  plugins (#470, #475). Support for these plugins is minimal and not guaranteed
 - fix: index the OAuth Provider consent lookup, which runs on every
   authorization. Regenerate your schema to add the indexes
 - fix: refuse `private_key_jwt` client assertions (OAuth Provider). Convex

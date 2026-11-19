@@ -12,11 +12,10 @@ that Convex and other relying parties need. Before, it also listed `/oauth2/*`
 authorization, token, userinfo, registration and end-session endpoints, which
 the Convex plugin never served.
 
-Apps that acted as an OpenID provider with the `oidcProvider` plugin can move to
-its 1.7 replacement, the OAuth Provider plugin (`@better-auth/oauth-provider`),
-with Local Install. See
-[Supported Plugins](/supported-plugins#oauth-provider-and-mcp) for the versions
-it needs.
+Better Auth 1.7 replaces `oidcProvider` with the OAuth Provider plugin
+(`@better-auth/oauth-provider`). Convex + Better Auth has only
+[minimal support](/supported-plugins#incompatible-plugins) for the OAuth
+Provider plugin, and that support is not guaranteed.
 
 **Upgrading deletes nothing.** Convex keeps an undeclared table and its
 documents, and stops validating them. In most apps these tables are empty,
