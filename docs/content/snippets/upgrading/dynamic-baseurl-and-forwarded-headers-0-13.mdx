@@ -13,6 +13,7 @@ If you run your own proxy in front of `.convex.site`, the component replaces any
 `x-forwarded-host` and `x-forwarded-proto` your proxy sends, whether or not
 `trustedProxyHeaders` is set. Send your public origin in
 `x-better-auth-forwarded-host` and `x-better-auth-forwarded-proto` instead, and
-list it exactly, without wildcards, in `trustedOrigins` or `allowedHosts`.
+list it exactly, without wildcards, in `trustedOrigins` or `allowedHosts`. If
+`trustedOrigins` is a function, return only origins you control.
 
 </div>

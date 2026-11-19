@@ -5,12 +5,12 @@ import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 import { z } from "zod";
 
 export const crossDomain = ({ siteUrl }: { siteUrl: string }) => {
-  // Origins from trustedOrigins that name a single http(s) origin. Wildcard
-  // patterns and custom schemes are excluded.
+  // Origins from trustedOrigins that name a single http(s) origin. Patterns
+  // with a `*` or `?` wildcard and custom schemes are excluded.
   const exactTrustedOrigins = (trustedOrigins: string[]) => {
     const origins = new Set<string>();
     for (const entry of trustedOrigins) {
-      if (entry.includes("*")) {
+      if (entry.includes("*") || entry.includes("?")) {
         continue;
       }
       try {

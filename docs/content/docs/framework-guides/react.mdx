@@ -159,9 +159,12 @@ description: Install and configure Convex + Better Auth for React.
 
     <Callout type="warn">
       Sign-in redirects only complete for origins you control, listed exactly
-      in `trustedOrigins`, not wildcards like `https://*.vercel.app`. For
-      preview deployments, set `SITE_URL` per preview, for example in the
-      Vercel build command:
+      in `trustedOrigins`, not wildcards like `https://*.vercel.app`. If
+      `trustedOrigins` is a function, return only origins you control. The
+      caller chooses the request's `Origin` and `Host` headers, so a function
+      that returns either one after a pattern check trusts every origin the
+      pattern matches. For preview deployments, set `SITE_URL` per preview,
+      for example in the Vercel build command:
 
       ```sh
       npx convex deploy --cmd 'npx convex env set --preview-name "$VERCEL_GIT_COMMIT_REF" SITE_URL "https://$VERCEL_URL" && npm run build'
