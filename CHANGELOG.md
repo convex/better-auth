@@ -11,6 +11,8 @@
   them on create, and refuses an update that changes one of their fields. A
   unique violation's message now says "unique constraint", which plugins look
   for
+- fix: index the OAuth Provider consent lookup, which runs on every
+  authorization. Regenerate your schema to add the indexes
 - fix: refuse `private_key_jwt` client assertions (OAuth Provider). Convex
   assigns document ids, so Better Auth can't stop an assertion from being used
   twice

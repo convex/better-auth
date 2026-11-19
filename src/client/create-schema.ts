@@ -29,6 +29,11 @@ export const indexFields = {
   session: ["expiresAt", ["expiresAt", "userId"]],
   verification: ["expiresAt", "identifier"],
   user: [["email", "name"], "name", "userId"],
+  // OAuth Provider looks up consent by these fields on every authorization.
+  oauthConsent: [
+    ["clientId", "userId"],
+    ["clientId", "referenceId", "userId"],
+  ],
 };
 
 // Return map of unique, sortable, and reference fields

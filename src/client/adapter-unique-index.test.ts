@@ -328,3 +328,35 @@ describe("account provider key", () => {
     await adapter.create(account(a.id, "github", "456"));
   });
 });
+
+describe("manual indexes", () => {
+  it("indexes the OAuth Provider consent lookup", async () => {
+    const { code } = await createSchema({
+      tables: getAuthTables({
+        ...pluginTableProfileOptions,
+        plugins: [
+          {
+            // Shaped like @better-auth/oauth-provider 1.7's `oauthConsent`.
+            id: "consent-test",
+            schema: {
+              oauthConsent: {
+                fields: {
+                  clientId: { type: "string", required: true },
+                  userId: { type: "string", required: false },
+                  referenceId: { type: "string", required: false },
+                },
+              },
+            },
+          },
+        ],
+      } as BetterAuthOptions),
+    });
+    const consent = code.slice(code.indexOf("oauthConsent: defineTable("));
+    expect(consent).toContain(
+      '.index("clientId_userId", ["clientId","userId"])'
+    );
+    expect(consent).toContain(
+      '.index("clientId_referenceId_userId", ["clientId","referenceId","userId"])'
+    );
+  });
+});
