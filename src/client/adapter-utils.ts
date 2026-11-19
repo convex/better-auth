@@ -300,9 +300,8 @@ const findIndex = (
   const indexEqFields =
     where
       ?.filter((w) => !w.operator || w.operator === "eq")
-      .sort((a, b) => {
-        return a.field.localeCompare(b.field);
-      })
+      // Same order as the default sort that schema generation uses.
+      .sort((a, b) => (a.field < b.field ? -1 : a.field > b.field ? 1 : 0))
       .map((w) => [w.field, w.value]) ?? [];
   if (!indexEqFields?.length && !boundField && !args.sortBy) {
     return;

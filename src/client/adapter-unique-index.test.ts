@@ -5,13 +5,15 @@ import { convexTest } from "convex-test";
 import type { BetterAuthOptions } from "better-auth";
 import { getAuthTables } from "better-auth/db";
 import { deviceAuthorization } from "better-auth/plugins/device-authorization";
-import { anyApi } from "convex/server";
+import { anyApi, defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
 import schema from "../component/testProfiles/schema.profile-plugin-table.js";
 import { pluginTableProfileOptions } from "../component/testProfiles/auth-options.profile-plugin-table.js";
 import { renameFieldProfileOptions } from "../component/testProfiles/auth-options.profile-rename-joins.js";
 import { createClient } from "./index.js";
 import { createSchema } from "./create-schema.js";
 import { createApi } from "./create-api.js";
+import { checkCompoundUniqueOnCreate } from "./adapter-utils.js";
 import type { DataModel } from "../component/_generated/dataModel.js";
 
 /**
@@ -326,6 +328,44 @@ describe("account provider key", () => {
     // Same accountId at another provider, or another accountId, is fine.
     await adapter.create(account(a.id, "google", "123"));
     await adapter.create(account(a.id, "github", "456"));
+  });
+});
+
+describe("compound unique index field order", () => {
+  it("enforces an index whose fields sort differently by locale", async () => {
+    // Schema generation sorts by code unit, which puts clientId first. A
+    // locale sort puts client_id first.
+    const linkSchema = defineSchema({
+      link: defineTable({
+        clientId: v.string(),
+        client_id: v.string(),
+      }).index("clientId_client_id", ["clientId", "client_id"]),
+    });
+    const tables: any = {
+      link: {
+        modelName: "link",
+        fields: {
+          clientId: { type: "string" },
+          client_id: { type: "string" },
+        },
+        indexes: [{ fields: ["client_id", "clientId"], unique: true }],
+      },
+    };
+    const t = convexTest(linkSchema, import.meta.glob("../component/**/*.*s"));
+    await t.run(async (ctx) => {
+      const row = { clientId: "a", client_id: "b" };
+      const check = () =>
+        checkCompoundUniqueOnCreate(
+          ctx as any,
+          linkSchema,
+          tables,
+          "link",
+          row
+        );
+      await check();
+      await ctx.db.insert("link", row);
+      await expect(check()).rejects.toThrow("unique constraint");
+    });
   });
 });
 
