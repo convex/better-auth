@@ -262,6 +262,12 @@ export const convexAdapter = <
       },
     },
     adapter: ({ options }) => {
+      if (options.advanced?.database?.generateId === "uuid") {
+        throw new Error(
+          '[convex-better-auth] advanced.database.generateId: "uuid" is not supported with Convex. It has no effect on ids, which Convex assigns, and it stops the single-use locks in Better Auth from being enforced. Remove the option.'
+        );
+      }
+
       // Disable telemetry in all cases because it requires Node
       options.telemetry = { enabled: false };
 

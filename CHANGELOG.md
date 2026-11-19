@@ -3,6 +3,9 @@
 ## Unreleased
 
 - chore: update to Better Auth 1.7.25, which is now the minimum
+- fix: refuse to start with `advanced.database.generateId: "uuid"`, which turns
+  off Better Auth's single-use checks. The option has no effect on ids, because
+  Convex assigns them
 - fix: support the OAuth Provider and MCP plugins (1.7.25 or later) again (#470,
   #475). Compound unique indexes are no longer rejected: the adapter enforces
   them on create, and refuses an update that changes one of their fields. A

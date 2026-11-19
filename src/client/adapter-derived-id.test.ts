@@ -48,6 +48,12 @@ const deriveId = (adapter: ReturnType<typeof setup>, model: string) =>
   });
 
 describe("ids Better Auth derives", () => {
+  it("refuses to start with generateId uuid", () => {
+    expect(() =>
+      setup({ ...options, advanced: { database: { generateId: "uuid" } } })
+    ).toThrow('generateId: "uuid" is not supported with Convex');
+  });
+
   it("refuses a private_key_jwt client assertion", async () => {
     const adapter = setup();
     const id = deriveId(adapter, "oauthClientAssertion");
