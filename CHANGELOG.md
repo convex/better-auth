@@ -3,11 +3,14 @@
 ## Unreleased
 
 - chore: update to Better Auth 1.7.25, which is now the minimum
-- fix: support the OAuth Provider and MCP plugins (1.7.20 or later) again (#470,
+- fix: support the OAuth Provider and MCP plugins (1.7.25 or later) again (#470,
   #475). Compound unique indexes are no longer rejected: the adapter enforces
   them on create, and refuses an update that changes one of their fields. A
   unique violation's message now says "unique constraint", which plugins look
   for
+- fix: refuse `private_key_jwt` client assertions (OAuth Provider). Convex
+  assigns document ids, so Better Auth can't stop an assertion from being used
+  twice
 - fix: verification consume on Better Auth 1.7.22+ (password reset, email OTP,
   magic link, phone number and two-factor OTP): allow `ne` on `_id`, and filter
   a `createdAt` bound on an indexed query instead of using it as an index range

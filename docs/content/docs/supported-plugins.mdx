@@ -26,14 +26,19 @@ Install](/local-install).
 
 [OAuth Provider](https://www.better-auth.com/docs/plugins/oauth-provider) and
 [MCP](https://www.better-auth.com/docs/plugins/mcp), which is built on it, add
-tables, so they need [Local Install](/local-install). Use version 1.7.20 or
-later of `@better-auth/oauth-provider` and `@better-auth/mcp`: 1.7.10 to 1.7.19
-sort consent rows by `id`, which the Convex adapter refuses.
+tables, so they need [Local Install](/local-install). Use version 1.7.25 or
+later of `@better-auth/oauth-provider` and `@better-auth/mcp`. The Convex
+adapter refuses to start with an earlier version of
+`@better-auth/oauth-provider`.
 
 OAuth Provider declares a compound unique index on `oauthClientResource`
 (`clientId`, `resourceId`). The Convex adapter enforces it when a row is
 created, and refuses an update that changes either field. The plugin never
 updates those fields; it deletes a link and creates a new one.
+
+The Convex adapter refuses `private_key_jwt` client assertions, so
+`private_key_jwt` client authentication and key rotation aren't supported.
+Client ID Metadata Documents (`@better-auth/cimd`) aren't supported either.
 
 ### Incompatible plugins
 
