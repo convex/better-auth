@@ -14,6 +14,7 @@ import type { SetOptional } from "type-fest";
 import type defaultSchema from "../component/schema.js";
 import type { Where } from "better-auth/types";
 import { asyncMap } from "convex-helpers";
+import semverLt from "semver/functions/lt.js";
 import { isRunMutationCtx } from "../utils/index.js";
 import { compareSortValues } from "./adapter-utils.js";
 import type { UnservedSort } from "./adapter-utils.js";
@@ -207,12 +208,6 @@ const selectDocFields = (
   );
 };
 
-const isAtLeast = (version: string | undefined, minimum: number[]) => {
-  const parts = (version ?? "").split("-")[0]!.split(".").map(Number);
-  const index = minimum.findIndex((wanted, i) => parts[i] !== wanted);
-  return index === -1 || parts[index]! > minimum[index]!;
-};
-
 export const convexAdapter = <
   DataModel extends GenericDataModel,
   Ctx extends GenericCtx<DataModel> = GenericActionCtx<DataModel>,
@@ -304,7 +299,10 @@ export const convexAdapter = <
       const oauthProvider = options.plugins?.find(
         (plugin) => plugin.id === "oauth-provider"
       );
-      if (oauthProvider && !isAtLeast(oauthProvider.version, [1, 7, 25])) {
+      if (
+        oauthProvider &&
+        (!oauthProvider.version || semverLt(oauthProvider.version, "1.7.25"))
+      ) {
         throw new Error(
           "[convex-better-auth] @better-auth/oauth-provider and @better-auth/mcp 1.7.25 or later are required with Convex."
         );
