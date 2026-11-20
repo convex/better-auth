@@ -1,23 +1,5 @@
 # Changelog
 
-## Unreleased
-
-- chore: update to Better Auth 1.7.25, which is now the minimum
-- fix: refuse to start with `advanced.database.generateId: "uuid"`, which turns
-  off Better Auth's single-use checks. The option has no effect on ids, because
-  Convex assigns them
-- fix: stop rejecting versions 1.7.25 and later of the OAuth Provider and MCP
-  plugins (#470, #475). Support for these plugins is minimal and not guaranteed
-- fix: index the OAuth Provider consent lookup and the token cleanup for a
-  replayed authorization code. Regenerate your schema to add the indexes
-- fix: refuse `private_key_jwt` client assertions (OAuth Provider). Convex
-  assigns document ids, so Better Auth can't stop an assertion from being used
-  twice
-- fix: verification consume on Better Auth 1.7.22+ (password reset, email OTP,
-  magic link, phone number and two-factor OTP): allow `ne` on `_id`, and filter
-  a `createdAt` bound on an indexed query instead of using it as an index range
-  (#479)
-
 ## 0.13.0
 
 - breaking: support Better Auth 1.7 (minimum 1.7.16); 1.6 is no longer supported
