@@ -39,6 +39,14 @@ const http = new HttpRouterWithHono(app);
 export default http;
 ```
 
+<Callout type="warn">
+  A handler mounted with Hono skips the origin checks in
+  `authComponent.registerRoutes()` and passes the request's host to Better Auth
+  unchanged. If your `baseURL` is dynamic, list only exact hosts you control in
+  `allowedHosts`, because Better Auth builds emailed links from any request host
+  that a wildcard matches.
+</Callout>
+
 ## Add CORS support
 
 Required for client only / SPA installs like React/Vite.
