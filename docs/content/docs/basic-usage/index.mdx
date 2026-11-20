@@ -39,11 +39,9 @@ in Convex.
 
 - #### Id generation
 
-  Convex assigns document ids, so `advanced.database.generateId` has no effect;
-  don't set it. On Better Auth 1.7, setting it to `"uuid"` also turns off
-  enforcement of verification reservations, the single-use locks Better Auth
-  takes on verification values. While it is `"uuid"`, the Convex plugin logs a
-  warning.
+  Convex assigns document ids, so `advanced.database.generateId` has no effect.
+  Don't set it. The Convex adapter refuses to start when it is `"uuid"`, because
+  `"uuid"` turns off Better Auth's single-use checks.
 
 ## Using server methods with `auth.api`
 

@@ -6,6 +6,7 @@ export const PLUGIN_TABLE_NORMAL_TESTS = [
   "create - should return null for nullable foreign keys",
   "create - should support arrays",
   "create - should support json",
+  "create - should support json arrays",
   "findMany - should find many with both one-to-one and one-to-many joins",
   "findMany - should find many with one-to-one join",
   "findMany - should handle mixed joins correctly when some are missing",

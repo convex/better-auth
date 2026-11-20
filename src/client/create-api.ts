@@ -10,7 +10,9 @@ import { asyncMap } from "convex-helpers";
 import { partial } from "convex-helpers/validators";
 import {
   adapterWhereValidator,
+  assertCompoundUniqueFieldsUnchanged,
   checkAccountKeyAvailable,
+  checkCompoundUniqueOnCreate,
   checkFieldsAvailable,
   checkUniqueFields,
   hasUniqueFields,
@@ -107,6 +109,13 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
           args.input.model,
           args.input.data
         );
+        await checkCompoundUniqueOnCreate(
+          ctx,
+          schema,
+          betterAuthSchema,
+          args.input.model,
+          args.input.data
+        );
         const id = await ctx.db.insert(
           args.input.model as any,
           args.input.data
@@ -194,6 +203,12 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
           // where clause matches nothing.
           return null;
         }
+        assertCompoundUniqueFieldsUnchanged(
+          betterAuthSchema,
+          args.input.model,
+          args.input.update,
+          doc
+        );
         await checkUniqueFields(
           ctx,
           schema,
@@ -276,6 +291,14 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
           ) {
             throw new Error(
               `Attempted to set unique fields in multiple documents in ${args.input.model} with the same value. Fields: ${Object.keys(args.input.update ?? {}).join(", ")}`
+            );
+          }
+          for (const doc of page) {
+            assertCompoundUniqueFieldsUnchanged(
+              betterAuthSchema,
+              args.input.model,
+              args.input.update ?? {},
+              doc
             );
           }
           await asyncMap(page, async (doc) => {
@@ -462,6 +485,12 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
           }
           update[field] = ((current as number | null | undefined) ?? 0) + delta;
         }
+        assertCompoundUniqueFieldsUnchanged(
+          betterAuthSchema,
+          args.input.model,
+          update,
+          doc
+        );
         await checkUniqueFields(
           ctx,
           schema,

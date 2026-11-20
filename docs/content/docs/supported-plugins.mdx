@@ -24,14 +24,15 @@ Install](/local-install).
 
 ### Incompatible plugins
 
-Official Better Auth plugins that are incompatible with Convex + Better Auth
-(even when Local Install is used):
+Official Better Auth plugins that are incompatible with Convex + Better Auth or
+have only partial support (even when Local Install is used):
 
 - [SSO](https://www.better-auth.com/docs/plugins/sso) - has direct dependencies on Node.js
 - [SCIM](https://www.better-auth.com/docs/plugins/scim) - requires a database
   adapter that supports Better Auth transactions, which are incompatible with
   how Convex transactions work.
 - [OAuth Provider](https://www.better-auth.com/docs/plugins/oauth-provider) -
-  requires compound unique indexes, which the Convex adapter doesn't support.
+  minimally supported, without guarantees. Features added in Better Auth 1.7,
+  such as `private_key_jwt`, aren't supported.
 - [MCP](https://www.better-auth.com/docs/plugins/mcp) - built on the OAuth
   Provider plugin.
