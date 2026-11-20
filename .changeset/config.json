@@ -2,7 +2,12 @@
   "$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
   "baseBranch": "main",
   "access": "public",
-  "changelog": "@changesets/cli/changelog",
+  "changelog": [
+    "@changesets/changelog-github",
+    {
+      "repo": "convex/better-auth"
+    }
+  ],
   "commit": false,
   "fixed": [],
   "linked": [],
