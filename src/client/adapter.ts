@@ -358,14 +358,19 @@ export const convexAdapter = <
               onCreateHandle: onCreateHandle,
             });
           }
+          // Client assertions are refused by table name, because an older
+          // @better-auth/core doesn't report the table.
+          if (canonicalModel === "oauthClientAssertion") {
+            throw new Error(
+              "private_key_jwt client authentication isn't supported with Convex. Better Auth accepts each client assertion once by inserting a row with an id it derives, and Convex assigns document ids."
+            );
+          }
           if (
             reservationId !== undefined &&
             derivedIdModels.has(canonicalModel)
           ) {
             throw new Error(
-              canonicalModel === "oauthClientAssertion"
-                ? "private_key_jwt client authentication isn't supported with Convex. Better Auth accepts each client assertion once by inserting a row with an id it derives, and Convex assigns document ids."
-                : `Better Auth derived an id for a new ${canonicalModel} row and relies on a second insert with that id failing. Convex assigns document ids, so the Convex adapter can't keep it.`
+              `Better Auth derived an id for a new ${canonicalModel} row and relies on a second insert with that id failing. Convex assigns document ids, so the Convex adapter can't keep it.`
             );
           }
           return ctx.runMutation(api.adapter.create, {

@@ -55,18 +55,18 @@ describe("ids Better Auth derives", () => {
   });
 
   it("refuses a private_key_jwt client assertion", async () => {
-    const adapter = setup();
-    const id = deriveId(adapter, "oauthClientAssertion");
+    // The id isn't derived through Better Auth here, as with a
+    // @better-auth/core that doesn't report the table.
     await expect(
-      adapter.create({
+      setup().create({
         model: "oauthClientAssertion",
-        data: { id, expiresAt: new Date(Date.now() + 300_000) },
+        data: { id: "jti-digest", expiresAt: new Date(Date.now() + 300_000) },
         forceAllowId: true,
       })
     ).rejects.toThrow("private_key_jwt client authentication isn't supported");
   });
 
-  it("refuses a derived id on any other table", async () => {
+  it("refuses a derived id on another table", async () => {
     const adapter = setup();
     const id = deriveId(adapter, "compoundIndex");
     await expect(
