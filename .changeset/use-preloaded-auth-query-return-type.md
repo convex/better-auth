@@ -1,5 +1,5 @@
 ---
-"@convex-dev/better-auth": patch
+"@convex-dev/better-auth": minor
 ---
 
 pr: #441
