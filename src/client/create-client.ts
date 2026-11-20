@@ -113,7 +113,12 @@ const exactTrustedOrigins = async (
   }
   const trusted = new Set<string>();
   for (const origin of origins) {
-    if (typeof origin !== "string" || origin.includes("*")) {
+    // `*` and `?` are wildcards in Better Auth origin patterns
+    if (
+      typeof origin !== "string" ||
+      origin.includes("*") ||
+      origin.includes("?")
+    ) {
       continue;
     }
     const parsed = parseHttpOrigin(origin);

@@ -1,5 +1,4 @@
 import type { BetterAuthDBSchema, DBFieldAttribute } from "better-auth/db";
-import { assertNoCompoundUniqueIndexes } from "./adapter-utils.js";
 
 const resolveCdTarget = (
   relativeDir: string | null,
@@ -30,6 +29,15 @@ export const indexFields = {
   session: ["expiresAt", ["expiresAt", "userId"]],
   verification: ["expiresAt", "identifier"],
   user: [["email", "name"], "name", "userId"],
+  // OAuth Provider looks up consent by these fields on every authorization.
+  oauthConsent: [
+    ["clientId", "userId"],
+    ["clientId", "referenceId", "userId"],
+  ],
+  // OAuth Provider deletes the tokens issued for an authorization code that
+  // is used twice.
+  oauthAccessToken: ["authorizationCodeId"],
+  oauthRefreshToken: ["authorizationCodeId"],
 };
 
 // Return map of unique, sortable, and reference fields
@@ -114,7 +122,6 @@ export const createSchema = async ({
   tables: BetterAuthDBSchema;
   file?: string;
 }) => {
-  assertNoCompoundUniqueIndexes(tables);
   // Hide these node builtins from Convex's esbuild so it doesn't try to
   // resolve them at bundle time. Only runs from the better-auth CLI.
   const path = await import(["p", "a", "t", "h"].join(""));

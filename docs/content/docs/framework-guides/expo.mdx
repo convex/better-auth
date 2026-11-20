@@ -17,7 +17,7 @@ description: Install and configure Convex + Better Auth for Expo.
 
     ```npm
     npm install convex@latest @convex-dev/better-auth
-    npm install better-auth@~1.7.16 @better-auth/expo@~1.7.16
+    npm install better-auth@~1.7.25 @better-auth/expo@~1.7.25
     ```
 
   </div>
@@ -328,7 +328,10 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
 
 <Callout type="warn">
   Web sign-in redirects only complete for origins you control, listed exactly
-  in `trustedOrigins`, not wildcards. Native sign-in via `your-scheme://` is
+  in `trustedOrigins`, not wildcards. If `trustedOrigins` is a function, return
+  only origins you control. The caller chooses the request's `Origin` and `Host`
+  headers, so a function that returns either one after a pattern check trusts
+  every origin the pattern matches. Native sign-in via `your-scheme://` is
   unaffected. For web previews, set `SITE_URL` per preview:
 
 ```sh

@@ -8,7 +8,6 @@ import {
   testAdapter,
   transactionsTestSuite,
 } from "@better-auth/test-utils/adapter";
-import type { BetterAuthOptions } from "better-auth";
 import { internal } from "../component/_generated/api.js";
 import schema from "../component/testProfiles/schema.profile-plugin-table.js";
 import { createClient } from "./index.js";
@@ -35,6 +34,7 @@ const NORMAL_DISABLED_TESTS = [
   "create - should return null for nullable foreign keys",
   "create - should support arrays",
   "create - should support json",
+  "create - should support json arrays",
   // convex-id-generation:
   // Convex controls generated IDs at write time.
   "create - should use generateId if provided",
@@ -74,19 +74,6 @@ const NORMAL_DISABLED_TESTS = [
 
 const toDisableMap = (testNames: readonly string[]) =>
   Object.fromEntries(testNames.map((testName) => [testName, true]));
-
-const getOverrideBetterAuthOptions = (
-  opts: BetterAuthOptions
-): BetterAuthOptions => ({
-  ...opts,
-  advanced: {
-    ...opts.advanced,
-    database: {
-      ...opts.advanced?.database,
-      generateId: "uuid",
-    },
-  },
-});
 
 type AdapterModule = ComponentApi["adapter"];
 type TestProfileName =
@@ -156,7 +143,6 @@ describe("Better Auth Adapter Tests", async () => {
   const { execute: executeBaseProfile } = await testAdapter({
     adapter: () => baseProfileClient.adapter(wrappedCtx),
     runMigrations: noMigrations,
-    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
     tests: [
       coreNormalTestSuite({
         disableTests: toDisableMap(NORMAL_DISABLED_TESTS),
@@ -170,7 +156,6 @@ describe("Better Auth Adapter Tests", async () => {
   const { execute: executeAdditionalFieldsProfile } = await testAdapter({
     adapter: () => additionalFieldsProfileClient.adapter(wrappedCtx),
     runMigrations: noMigrations,
-    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
     prefixTests: "profile:additional-fields",
     tests: [
       additionalFieldsNormalTestSuite(),
@@ -181,7 +166,6 @@ describe("Better Auth Adapter Tests", async () => {
   const { execute: executePluginTableProfile } = await testAdapter({
     adapter: () => pluginTableProfileClient.adapter(wrappedCtx),
     runMigrations: noMigrations,
-    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
     prefixTests: "profile:plugin-table",
     tests: [pluginTableNormalTestSuite()],
   });
@@ -189,7 +173,6 @@ describe("Better Auth Adapter Tests", async () => {
   const { execute: executeRenameFieldProfile } = await testAdapter({
     adapter: () => renameFieldProfileClient.adapter(wrappedCtx),
     runMigrations: noMigrations,
-    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
     prefixTests: "profile:rename-field-join",
     tests: [renameFieldAndJoinTestSuite()],
   });
@@ -197,7 +180,6 @@ describe("Better Auth Adapter Tests", async () => {
   const { execute: executeRenameUserCustomProfile } = await testAdapter({
     adapter: () => renameUserCustomProfileClient.adapter(wrappedCtx),
     runMigrations: noMigrations,
-    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
     prefixTests: "profile:rename-user-custom",
     tests: [renameModelUserCustomTestSuite()],
   });
@@ -205,7 +187,6 @@ describe("Better Auth Adapter Tests", async () => {
   const { execute: executeRenameUserTableProfile } = await testAdapter({
     adapter: () => renameUserTableProfileClient.adapter(wrappedCtx),
     runMigrations: noMigrations,
-    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
     prefixTests: "profile:rename-user-table",
     tests: [renameModelUserTableTestSuite()],
   });
@@ -213,7 +194,6 @@ describe("Better Auth Adapter Tests", async () => {
   const { execute: executeOrganizationJoinsProfile } = await testAdapter({
     adapter: () => organizationJoinsProfileClient.adapter(wrappedCtx),
     runMigrations: noMigrations,
-    overrideBetterAuthOptions: getOverrideBetterAuthOptions,
     prefixTests: "profile:organization-joins",
     tests: [multiJoinsMissingRowsTestSuite()],
   });
@@ -226,9 +206,7 @@ describe("Better Auth Adapter Tests", async () => {
   executeRenameUserTableProfile();
   executeOrganizationJoinsProfile();
 
-  // The suites above use generateId: "uuid", which drops the deterministic
-  // ids Better Auth uses to reserve verification values.
-  describe("with default ids", () => {
+  describe("verification values", () => {
     const createAuth = (onMagicLink: (url: string) => void = () => {}) =>
       betterAuth({
         baseURL: "http://localhost:3000",

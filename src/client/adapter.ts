@@ -14,6 +14,7 @@ import type { SetOptional } from "type-fest";
 import type defaultSchema from "../component/schema.js";
 import type { Where } from "better-auth/types";
 import { asyncMap } from "convex-helpers";
+import semverLt from "semver/functions/lt.js";
 import { isRunMutationCtx } from "../utils/index.js";
 import { compareSortValues } from "./adapter-utils.js";
 import type { UnservedSort } from "./adapter-utils.js";
@@ -256,6 +257,12 @@ export const convexAdapter = <
       },
     },
     adapter: ({ options }) => {
+      if (options.advanced?.database?.generateId === "uuid") {
+        throw new Error(
+          '[convex-better-auth] advanced.database.generateId: "uuid" is not supported with Convex. It has no effect on ids, which Convex assigns, and it stops the single-use locks in Better Auth from being enforced. Remove the option.'
+        );
+      }
+
       // Disable telemetry in all cases because it requires Node
       options.telemetry = { enabled: false };
 
@@ -282,10 +289,34 @@ export const convexAdapter = <
       // Requested verification ids mapped to their identifiers (see create).
       const reservations = new Map<string, string>();
 
+      // Tables Better Auth has derived an id for. Better Auth derives an id
+      // from a value it accepts once, so a second insert with that id must
+      // fail.
+      const derivedIdModels = new Set<string>();
+
+      // A version of @better-auth/oauth-provider below Better Auth's minimum
+      // may not report the table it derives an id for.
+      const oauthProvider = options.plugins?.find(
+        (plugin) => plugin.id === "oauth-provider"
+      );
+      if (
+        oauthProvider &&
+        (!oauthProvider.version || semverLt(oauthProvider.version, "1.7.25"))
+      ) {
+        throw new Error(
+          "[convex-better-auth] @better-auth/oauth-provider and @better-auth/mcp 1.7.25 or later are required with Convex."
+        );
+      }
+
       return {
         id: "convex",
         options: {
           isRunMutationCtx: isRunMutationCtx(ctx),
+          // Better Auth calls this before it derives an id for `model`.
+          usesObjectIdKey: (model: string) => {
+            derivedIdModels.add(model);
+            return false;
+          },
         },
         createSchema: async ({ file, tables }) => {
           const { createSchema } = await import("./create-schema.js");
@@ -305,14 +336,16 @@ export const convexAdapter = <
           // replay checks) by inserting a row with a deterministic id, so a
           // second insert fails on the primary key. Convex assigns its own
           // ids, so the identifier is the first-writer-wins key instead.
-          // Any other id Better Auth supplies is dropped.
+          // An id Better Auth derives for another table is refused. Any other
+          // id is dropped.
           const { _id: reservationId, ...createData } = data as {
             _id?: string;
             identifier?: string;
           };
+          const canonicalModel = modelKey ?? model;
           if (
             reservationId !== undefined &&
-            (modelKey ?? model) === "verification" &&
+            canonicalModel === "verification" &&
             createData.identifier !== undefined
           ) {
             reservations.set(reservationId, createData.identifier);
@@ -322,6 +355,21 @@ export const convexAdapter = <
               unique: ["identifier"],
               onCreateHandle: onCreateHandle,
             });
+          }
+          // Client assertions are refused by table name, because an older
+          // @better-auth/core doesn't report the table.
+          if (canonicalModel === "oauthClientAssertion") {
+            throw new Error(
+              "private_key_jwt client authentication isn't supported with Convex. Better Auth accepts each client assertion once by inserting a row with an id it derives, and Convex assigns document ids."
+            );
+          }
+          if (
+            reservationId !== undefined &&
+            derivedIdModels.has(canonicalModel)
+          ) {
+            throw new Error(
+              `Better Auth derived an id for a new ${canonicalModel} row and relies on a second insert with that id failing. Convex assigns document ids, so the Convex adapter can't keep it.`
+            );
           }
           return ctx.runMutation(api.adapter.create, {
             input: { model: model as any, data: createData as any },

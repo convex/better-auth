@@ -18,7 +18,6 @@ export const getNormalTestSuiteTests = (
   const {
     adapter,
     generate,
-    getBetterAuthOptions,
     insertRandom,
     modifyBetterAuthOptions,
     sortModels,
@@ -34,13 +33,8 @@ export const getNormalTestSuiteTests = (
         data: user,
         forceAllowId: true,
       });
-      const options = getBetterAuthOptions();
-      if (
-        options.advanced?.database?.generateId === "serial" ||
-        options.advanced?.database?.generateId === "uuid"
-      ) {
-        user.id = result.id;
-      }
+      // Convex assigns the document id, so the supplied id is dropped.
+      user.id = result.id;
 
       expect(typeof result.id).toEqual("string");
       const transformed = transformGeneratedModel(user);
