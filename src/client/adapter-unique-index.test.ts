@@ -399,4 +399,25 @@ describe("manual indexes", () => {
       '.index("clientId_referenceId_userId", ["clientId","referenceId","userId"])'
     );
   });
+
+  it("indexes the tokens OAuth Provider deletes for a replayed code", async () => {
+    const token = {
+      fields: { authorizationCodeId: { type: "string", required: false } },
+    };
+    const { code } = await createSchema({
+      tables: getAuthTables({
+        ...pluginTableProfileOptions,
+        plugins: [
+          {
+            // Shaped like @better-auth/oauth-provider 1.7's token tables.
+            id: "token-test",
+            schema: { oauthAccessToken: token, oauthRefreshToken: token },
+          },
+        ],
+      } as BetterAuthOptions),
+    });
+    expect(
+      code.match(/\.index\("authorizationCodeId", \["authorizationCodeId"\]\)/g)
+    ).toHaveLength(2);
+  });
 });

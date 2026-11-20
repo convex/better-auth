@@ -8,8 +8,8 @@
   Convex assigns them
 - fix: stop rejecting versions 1.7.25 and later of the OAuth Provider and MCP
   plugins (#470, #475). Support for these plugins is minimal and not guaranteed
-- fix: index the OAuth Provider consent lookup, which runs on every
-  authorization. Regenerate your schema to add the indexes
+- fix: index the OAuth Provider consent lookup and the token cleanup for a
+  replayed authorization code. Regenerate your schema to add the indexes
 - fix: refuse `private_key_jwt` client assertions (OAuth Provider). Convex
   assigns document ids, so Better Auth can't stop an assertion from being used
   twice

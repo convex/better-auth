@@ -34,6 +34,10 @@ export const indexFields = {
     ["clientId", "userId"],
     ["clientId", "referenceId", "userId"],
   ],
+  // OAuth Provider deletes the tokens issued for an authorization code that
+  // is used twice.
+  oauthAccessToken: ["authorizationCodeId"],
+  oauthRefreshToken: ["authorizationCodeId"],
 };
 
 // Return map of unique, sortable, and reference fields
