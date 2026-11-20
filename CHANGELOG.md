@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.1
+
+### Patch Changes
+
+- The OAuth Provider and MCP plugins are no longer rejected on Better Auth
+  1.7.25 and later, with minimal support. Better Auth 1.7.25 is now the minimum.
+  ([#483](https://github.com/convex/better-auth/pull/483) by
+  [@erquhart](https://github.com/erquhart))
+
+- Fix email OTP, magic link, password reset, phone number and two-factor OTP
+  verification failing with a 500 on Better Auth 1.7.22 and later.
+  ([#481](https://github.com/convex/better-auth/pull/481) by
+  [@troioi-vn](https://github.com/troioi-vn))
+
 ## 0.13.0
 
 - breaking: support Better Auth 1.7 (minimum 1.7.16); 1.6 is no longer supported
