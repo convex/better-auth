@@ -5,7 +5,8 @@
   "changelog": [
     "@changesets/changelog-github",
     {
-      "repo": "convex/better-auth"
+      "repo": "convex/better-auth",
+      "template": "\n\n- {summary} ({pull} by {authors})"
     }
   ],
   "commit": false,
