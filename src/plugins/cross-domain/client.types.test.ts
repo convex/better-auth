@@ -15,5 +15,5 @@ it("composes with Better Auth client plugins and infers cross-domain actions", (
     plugins: [convexClient(), crossDomainClient({ storage }), adminClient()],
   });
 
-  expectTypeOf(authClient.getCookie).toEqualTypeOf<() => string>();
+  expectTypeOf(authClient.getCookie).toEqualTypeOf<() => Promise<string>>();
 });
