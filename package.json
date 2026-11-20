@@ -1,10 +1,10 @@
 {
   "name": "@convex-dev/better-auth",
   "description": "A Better Auth component for Convex.",
-  "repository": "github:get-convex/better-auth",
-  "homepage": "https://github.com/get-convex/better-auth#readme",
+  "repository": "github:convex/better-auth",
+  "homepage": "https://github.com/convex/better-auth#readme",
   "bugs": {
-    "url": "https://github.com/get-convex/better-auth/issues"
+    "url": "https://github.com/convex/better-auth/issues"
   },
   "version": "0.13.0",
   "license": "Apache-2.0",
@@ -29,10 +29,7 @@
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "npm run build && cd e2e && npm run test",
     "test:coverage": "vitest run --coverage --coverage.reporter=text",
-    "preversion": "npm ci && npm run build:clean && npm run test && npm run lint && npm run typecheck",
-    "alpha": "npm version prerelease --preid alpha && npm publish --tag alpha && git push --follow-tags",
-    "release": "npm version patch && npm publish && git push --follow-tags",
-    "version": "(npm whoami || npm login) && vim -c 'normal o' -c 'normal o## '$npm_package_version CHANGELOG.md && prettier -w CHANGELOG.md && git add CHANGELOG.md"
+    "check": "npm run test && npm run typecheck && npm run lint"
   },
   "files": [
     "dist",
@@ -108,6 +105,8 @@
   "devDependencies": {
     "@better-auth/core": "1.7.25",
     "@better-auth/test-utils": "1.7.25",
+    "@changesets/changelog-github": "1.0.1",
+    "@changesets/cli": "3.0.3",
     "@convex-dev/eslint-plugin": "2.0.0",
     "@edge-runtime/vm": "5.0.0",
     "@eslint/eslintrc": "3.3.5",

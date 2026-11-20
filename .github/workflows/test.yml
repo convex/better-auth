@@ -4,6 +4,7 @@ concurrency:
   cancel-in-progress: true
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -25,31 +26,36 @@ jobs:
       - name: Node setup
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          cache-dependency-path: package.json
+          cache-dependency-path: package-lock.json
           node-version: "24.x"
           cache: "npm"
 
       - name: Install and build
         run: |
-          npm i --min-release-age=0
+          npm ci --min-release-age=0
           npm run build
       - name: Install example dependencies
         run: |
-          cd examples/next && npm i &
-          cd examples/react && npm i &
-          cd examples/tanstack && npm i &
-          wait
+          for dir in examples/next examples/react examples/tanstack; do
+            npm ci --prefix "$dir" --min-release-age=0
+          done
       - name: Publish package for testing branch
         run:
           npx pkg-pr-new publish || echo "Have you set up pkg-pr-new for this
           repo?"
       - name: Test
         run: |
-          npm run test
-          npm run typecheck
-          npm run lint
+          npm run check
       - name: Install e2e dependencies
-        run: cd e2e && npm i
+        run: npm ci --prefix e2e --min-release-age=0
+      - name: Regenerate and verify committed code
+        env:
+          CONVEX_DISABLE_TELEMETRY: "1"
+        run: |
+          (cd examples/react && npx convex init)
+          npm run build:codegen
+          git diff --exit-code -- src/component/_generated examples/react/convex/_generated examples/react/convex/betterAuth/_generated
+          test -z "$(git ls-files --others --exclude-standard src/component/_generated examples/react/convex/_generated examples/react/convex/betterAuth/_generated)"
       - name: Install Playwright browsers
         run: cd e2e && npx playwright install --with-deps chromium
       - name: Run Convex semantics suite against a local backend

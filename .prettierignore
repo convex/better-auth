@@ -1,0 +1,2 @@
+# Changeset summaries become changelog entries; keep each on one line.
+.changeset/*.md

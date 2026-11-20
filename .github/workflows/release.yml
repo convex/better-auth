@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # Started on a tag by the version workflow, or by hand to retry a tag.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  NODE_VERSION: "24.22.1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      name: ${{ steps.release.outputs.name }}
+      version: ${{ steps.release.outputs.version }}
+      channel: ${{ steps.release.outputs.channel }}
+      artifact_id: ${{ steps.pack.outputs.artifact-id }}
+      sha256: ${{ steps.pack.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - id: release
+        uses: convex/npm-release-actions/validate-tag@3a142e21f421319890981579b8952267bc11fc53 # v0.3.0
+      - run: npm ci --min-release-age=0
+      - uses: convex/npm-release-actions/check-release-notes@3a142e21f421319890981579b8952267bc11fc53 # v0.3.0
+      - run: npm run build
+      - name: Install example and E2E dependencies
+        run: |
+          for dir in examples/next examples/react examples/tanstack e2e; do
+            npm ci --prefix "$dir" --min-release-age=0
+          done
+      - run: npm run check
+      - name: Regenerate and verify committed code
+        env:
+          CONVEX_DISABLE_TELEMETRY: "1"
+        run: |
+          (cd examples/react && npx convex init)
+          npm run build:codegen
+          git diff --exit-code -- src/component/_generated examples/react/convex/_generated examples/react/convex/betterAuth/_generated
+          test -z "$(git ls-files --others --exclude-standard src/component/_generated examples/react/convex/_generated examples/react/convex/betterAuth/_generated)"
+      - name: Install Playwright browsers
+        run: cd e2e && npx playwright install --with-deps chromium
+      - name: Run Convex semantics suite against a local backend
+        run: cd e2e && node backendHarness.js 'bash live-semantics/run.sh'
+      - name: Run E2E tests
+        run: npm run test:e2e
+      - id: pack
+        uses: convex/npm-release-actions/pack@3a142e21f421319890981579b8952267bc11fc53 # v0.3.0
+
+  stage:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: convex/npm-release-actions/stage@3a142e21f421319890981579b8952267bc11fc53 # v0.3.0
+        with:
+          artifact-id: ${{ needs.build.outputs.artifact_id }}
+          sha256: ${{ needs.build.outputs.sha256 }}
+          name: ${{ needs.build.outputs.name }}
+          version: ${{ needs.build.outputs.version }}
+          channel: ${{ needs.build.outputs.channel }}
+          node-version: ${{ env.NODE_VERSION }}
