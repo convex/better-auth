@@ -1,3 +1,4 @@
+import { CopyMarkdownButton } from "@/components/copy-markdown";
 import { source } from "@/lib/source";
 import {
   DocsPage,
@@ -8,6 +9,14 @@ import {
 import { notFound } from "next/navigation";
 import { createRelativeLink } from "fumadocs-ui/mdx";
 import { getMDXComponents } from "@/mdx-components";
+
+const BASE_PATH = "/better-auth";
+
+function mdUrlFor(pageUrl: string): string {
+  return pageUrl === "/"
+    ? `${BASE_PATH}/index.md`
+    : `${BASE_PATH}${pageUrl}.md`;
+}
 
 export default async function Page(props: {
   params: Promise<{ slug?: string[] }>;
@@ -24,6 +33,9 @@ export default async function Page(props: {
       full={page.data.full}
       tableOfContent={{ style: "clerk" }}
     >
+      <div className="flex justify-end">
+        <CopyMarkdownButton mdUrl={mdUrlFor(page.url)} />
+      </div>
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
       <DocsBody>
