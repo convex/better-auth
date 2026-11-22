@@ -15,7 +15,7 @@ Authenticated queries in SSR require an additional request for a token. This can
 slow down initial page load and navigation for frameworks that server render on
 in-app navigation.
 
-JWT caching allows server utilties like `fetchAuthQuery` to utilize the Convex
+JWT caching allows server utilities like `fetchAuthQuery` to utilize the Convex
 JWT from request cookies if present and unexpired.
 
 First, create a utility function for determining whether an error is auth
