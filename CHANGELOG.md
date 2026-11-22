@@ -14,6 +14,9 @@
   ([#481](https://github.com/convex/better-auth/pull/481) by
   [@troioi-vn](https://github.com/troioi-vn))
 
+- perf: the default component adapter no longer loads the sample auth options
+  and every Better Auth plugin on each adapter call (#459)
+
 ## 0.13.0
 
 - breaking: support Better Auth 1.7 (minimum 1.7.16); 1.6 is no longer supported
