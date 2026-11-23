@@ -12,7 +12,7 @@ import type { EmptyObject } from "convex-helpers";
 
 type FetchResult<T> = {
   data?: T | null;
-  error?: unknown;
+  error?: { status?: number } | null;
 };
 
 /**
@@ -183,10 +183,22 @@ function useUseAuthFromBetterAuth(
             const promise: Promise<string | null> = authClient.convex
               .token({ fetchOptions: { throw: false } })
               .then(
-                ({ data }: FetchResult<{ token?: string | null }>) =>
-                  data?.token || null
+                ({ data, error }: FetchResult<{ token?: string | null }>) => {
+                  // Only a 401 means the session is gone.
+                  if (error && error.status !== 401) {
+                    throw error;
+                  }
+                  return data?.token || null;
+                }
               )
-              .catch(() => null)
+              // On null, Convex signs out and stops refreshing, so any other
+              // failure keeps this session's token until the server rejects it.
+              .catch(() => {
+                const cached = cachedTokenRef.current;
+                return cached && cached.sessionId === sessionId
+                  ? cached.token
+                  : null;
+              })
               .then((token) => {
                 if (pendingTokenRef.current?.promise === promise) {
                   pendingTokenRef.current = null;
