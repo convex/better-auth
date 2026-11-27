@@ -1845,6 +1845,56 @@ describe("an id ne and a createdAt bound on an indexed query", () => {
   });
 });
 
+describe("stored createdAt ranges", () => {
+  const at = 1_700_000_000_000;
+  const createdAtBound = {
+    field: "createdAt",
+    operator: "lte",
+    value: at,
+  } satisfies Where;
+
+  const seed = (h: Harness) => {
+    const row = (createdAt: number, expiresAt: number) => ({
+      identifier: "otp",
+      value: "v",
+      createdAt,
+      updatedAt: createdAt,
+      expiresAt,
+    });
+    return h.insertMany("verification", [
+      row(at + 1, at + 10),
+      row(at, at + 10),
+      row(at - 1, at + 2),
+    ]);
+  };
+
+  it("filters a standalone range by the stored timestamp", async () => {
+    const h = await setup();
+    const [, active, expired] = await seed(h);
+    const rows = await h.adapter.findMany<Row>({
+      model: "verification",
+      where: [createdAtBound],
+    });
+
+    expect(sortedIds(rows)).toEqual([active!, expired!].sort());
+  });
+
+  it("combines a stored creation bound with an indexed expiry bound", async () => {
+    const h = await setup();
+    const [, active] = await seed(h);
+    const rows = await h.adapter.findMany<Row>({
+      model: "verification",
+      where: [
+        createdAtBound,
+        { field: "expiresAt", operator: "gt", value: at + 5 },
+      ],
+      sortBy: { field: "expiresAt", direction: "asc" },
+    });
+
+    expect(sortedIds(rows)).toEqual([active!]);
+  });
+});
+
 describe("findOne with OR clauses", () => {
   const seed = (h: Harness) =>
     h.insertMany("nullable", [{ plain: "a" }, { plain: "b" }]);
