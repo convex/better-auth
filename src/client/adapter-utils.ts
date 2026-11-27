@@ -216,6 +216,12 @@ export const hasUniqueFields = (
 const isNullEq = (w: { operator?: string; value: unknown }) =>
   (!w.operator || w.operator === "eq") && w.value === null;
 
+// Better Auth's stored createdAt can differ from Convex's _creationTime.
+// Apply its bounds to the document and keep the index range for other fields.
+const isCreatedAtRange = (w: { field: string; operator?: string }) =>
+  w.field === "createdAt" &&
+  ["lt", "lte", "gt", "gte"].includes(w.operator ?? "");
+
 const findIndex = (
   schema: SchemaDefinition<any, any>,
   args: {
@@ -259,7 +265,8 @@ const findIndex = (
           w.operator
         )) &&
       w.field !== "_id" &&
-      !isNullEq(w)
+      !isNullEq(w) &&
+      !isCreatedAtRange(w)
     );
   });
   if (!where?.length && !args.sortBy) {
@@ -313,10 +320,10 @@ const findIndex = (
   const indexes = table[" indexes"]();
   const sortField = args.sortBy?.field;
 
-  // We internally use _creationTime in place of Better Auth's createdAt
+  // A createdAt sort uses _creationTime.
   const indexFields = indexEqFields
     .map(([field]) => field)
-    .concat(boundField && boundField !== "createdAt" ? boundField : "")
+    .concat(boundField ?? "")
     .concat(
       sortField && sortField !== "createdAt" && boundField !== sortField
         ? sortField
@@ -326,8 +333,7 @@ const findIndex = (
   if (!indexFields.length && !boundField && !sortField) {
     return;
   }
-  // Use the built in _creationTime index if bounding or sorting by createdAt
-  // with no other fields
+  // Use the built-in _creationTime order for a createdAt sort with no other fields.
   const index = !indexFields.length
     ? {
         indexDescriptor: "by_creation_time",
@@ -339,11 +345,9 @@ const findIndex = (
         );
         // If sorting by createdAt, no intermediate fields can be on the index
         // as they may override the createdAt sort order.
-        const boundFieldMatch =
-          boundField === "createdAt" || sortField === "createdAt"
-            ? indexFields.length === fields.length
-            : true;
-        return fieldsMatch && boundFieldMatch;
+        const sortFieldMatch =
+          sortField !== "createdAt" || indexFields.length === fields.length;
+        return fieldsMatch && sortFieldMatch;
       });
   if (!index) {
     return { indexFields };
@@ -636,17 +640,13 @@ const generateQuery = (
     findIndex(schema, args) ?? {};
   const usableIndex =
     index?.indexDescriptor === "by_creation_time" ? undefined : index;
-  // Indexes end in _creationTime, not the stored createdAt, so a createdAt
-  // bound can't be an index range; it is applied as a filter below.
-  const rangeInIndex = boundField !== undefined && boundField !== "createdAt";
   const query = stream(ctx.db as any, schema).query(args.model as any);
   const hasValues =
     (values?.eq?.length ?? 0) > 0 ||
-    (rangeInIndex &&
-      (values?.lt !== undefined ||
-        values?.lte !== undefined ||
-        values?.gt !== undefined ||
-        values?.gte !== undefined));
+    values?.lt !== undefined ||
+    values?.lte !== undefined ||
+    values?.gt !== undefined ||
+    values?.gte !== undefined;
   const indexedQuery = usableIndex
     ? query.withIndex(
         usableIndex.indexDescriptor,
@@ -654,9 +654,6 @@ const generateQuery = (
           ? (q: any) => {
               for (const [idx, value] of (values?.eq ?? []).entries()) {
                 q = q.eq(usableIndex.fields[idx], value);
-              }
-              if (!rangeInIndex) {
-                return q;
               }
               if (values?.lt !== undefined) {
                 q = q.lt(boundField, values.lt);
@@ -697,17 +694,14 @@ const generateQuery = (
     return filterByWhere(
       doc,
       args.where,
-      // Index used for all eq and range clauses, apply remaining clauses
-      // incompatible with Convex statically.
+      // Apply the predicates left over after the index lookup.
       (w) =>
         isNullEq(w) ||
+        isCreatedAtRange(w) ||
         (w.operator &&
           ["contains", "starts_with", "ends_with", "ne", "not_in"].includes(
             w.operator
-          )) ||
-        (!rangeInIndex &&
-          w.field === boundField &&
-          ["lt", "lte", "gt", "gte"].includes(w.operator ?? ""))
+          ))
     );
   });
   return filteredQuery;
